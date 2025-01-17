@@ -165,3 +165,54 @@ Projectile[30].Damage = 60;            // is shorthand for:
 (ProjectilePointer + 30)->Damage = 60; // which is also shorthand for:
 (ProjectilePointer + 30 * sizeof(projectile))->Damage = 30;
 ```
+
+## Binary Operators And Hexadecimal Values
+
+If we take the integer value 0, we'll see it has a similarly intuitive representation in binary as well as hexadecimal.
+
+Hex:    `0x00000000` (32-bit hex value)
+Binary: `0000 0000 0000 0000 0000 0000 0000 0000` (32-bit binary value)
+
+You'll notice that each group of four binary bits corresponds to one 0 in the hex value.
+
+The following is what happens when we start applying binary operators to shift bits around here.
+
+```c
+int x = 0xA; // 0x0000000A
+
+// Bitwise left-shift operator
+x = x << 4;        // 0x000000A0
+x = x << 4;        // 0x00000A00
+
+// Bitwise right-shift operator
+x = x >> 4;        // 0x000000A0
+x = x >> 4;        // 0x0000000A
+x = x >> 4;        // 0x00000000 The 'A' is gone forever, it has been shifted off here.
+
+// Bitwise or operator
+x = 0;             // 0x00000000
+x = x | (1 << 4);  // 0x00000010
+x = x | (1 << 28); // 0x01000010
+x = x | (1 << 16); // 0x01001010
+
+// Create a new variable to represent 0x00000110
+int y = (1 << 8) | (1 << 4)
+
+// Bitwise and operator
+int z = x & y;     // 0x00000010 x and y share only one bit in the 4th position!
+
+// Bitwise exclusive-or operator (xor)
+int q = x ^ y;     // 0x01001100
+```
+
+From this demonstration of the bitwise operators, we can infer the following:
+
+__Left Shift__ `<<`: Shifts the bits to the left by the right-hand operand (multiplies the number by 2^rho)
+
+__Right Shift__ `>>`: Shifts the bits to the right by the right-hand operand (divides the number by 2^rho)
+
+__Or__ `|`: Compares the bits and sets the bits that have values. Think of this as a bitwise combination with the right hand operand. If both bits are set in a given position it adds them together.
+
+__And__ `&`: Compares the bits and sets only the bits that were the same as the set bits in the right hand operand. Will not add the ands, obviously.
+
+__Xor__ `^`: Compares the bits and sets the bits ONLY if the bit is set in ONE of the operands BUT NOT BOTH. If the bit is set in both it will cancel them out.
