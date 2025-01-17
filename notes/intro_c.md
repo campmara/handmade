@@ -131,3 +131,37 @@ The CPU has pieces of memory that are right on the chips, called the Cache. When
 If, however, that piece of memory is not available in the cache, then the CPU has to request it from Memory, which is obviously much slower due to the physical distance the memory has to travel through the wires. This is called a *cache miss*.
 
 Cache sizes are necessarily quite small (in Casey's example, an L3 cache had 8 megabytes of memory).
+
+## Binary representation:
+
+| 32768 | 16384 | 8192 | 4096  | 2048 | 1024 | 512 | 256  | 128 | 64  | 32  | 16   | 8   | 4   | 2   | 1   |
+| ----- | ----- | ---- | ----- | ---- | ---- | --- | ---- | --- | --- | --- | ---- | --- | --- | --- | --- |
+| 0     | 0     | 0    | 0   - | 0    | 0    | 0   | 0  - | 0   | 0   | 0   | 0  - | 0   | 0   | 0   | 0   |
+
+## Endian-ness
+
+Little Endian (x86, arm, x64):
+* if the low order byte comes first in memory
+
+Big Endian (Xbox360 and PS3, nowadays those are using newer processors that are little endian):
+* if the high order byte comes first in memory
+
+We still have to deal with Big endianness with working with other programs! Importing / exporting from stuff sometimes involves a different endianness.
+
+## Why is garbage memory always 204?
+
+204 is cc in hexadecimal!
+
+A lot of errors come from uninitialized values. In debug builds, it's often a value that doesn't really appear deliberately, so in debug builds if you see this value and have a bug, that's likely what the bug is! Uninitialized values...
+
+## Pointers are 4 bytes!
+
+Just a random note. Remember this!
+
+## Array syntax is shorthand!
+
+```c
+Projectile[30].Damage = 60;            // is shorthand for:
+(ProjectilePointer + 30)->Damage = 60; // which is also shorthand for:
+(ProjectilePointer + 30 * sizeof(projectile))->Damage = 30;
+```
