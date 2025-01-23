@@ -1,5 +1,6 @@
 #include <Windows.h>
 #include <stdint.h>
+#include <winuser.h>
 
 #define global        static // truly global
 #define internal      static // local to the file
@@ -29,9 +30,27 @@ struct Win32OffscreenBuffer
     int         bytes_per_pixel;
 };
 
-// TODO(mara): These are globals for now.
-global bool                 app_is_running;
+struct Win32WindowDimensions
+{
+    int width;
+    int height;
+};
+
+// TODO(mara): These are globals for now
+global bool                 global_is_running;
 global Win32OffscreenBuffer global_backbuffer;
+
+Win32WindowDimensions GetWindowDimensions(HWND window)
+{
+    Win32WindowDimensions result;
+
+    RECT client_rect;
+    GetClientRect(window, &client_rect);
+    result.width = client_rect.right - client_rect.left;
+    result.height = client_rect.bottom - client_rect.top;
+
+    return result;
+}
 
 internal void RenderWeirdGradient(Win32OffscreenBuffer buffer, int blue_offset, int green_offset)
 {
@@ -62,8 +81,8 @@ internal void RenderWeirdGradient(Win32OffscreenBuffer buffer, int blue_offset, 
 
 internal void Win32ResizeDIBSection(Win32OffscreenBuffer *buffer, int width, int height)
 {
-    // TODO(mara): Bulletproof this.
-    // Maybe don't free first, free after, then free first if that fails.
+    // TODO(mara): Bulletproof this
+    // Maybe don't free first, free after, then free first if that fails
 
     if (buffer->memory)
     {
@@ -74,6 +93,9 @@ internal void Win32ResizeDIBSection(Win32OffscreenBuffer *buffer, int width, int
     buffer->height = height;
     buffer->bytes_per_pixel = 4;
 
+    // NOTE(mara): when the biHeight field is negative, this is the clue to Windows to treat this 
+    // bitmap as top-down, not bottom-up, meaning that the first three bytes of the image are the 
+    // color for the top left pixel in the bitmap, not the bottom left!
     buffer->info.bmiHeader.biSize = sizeof(buffer->info.bmiHeader);
     buffer->info.bmiHeader.biWidth = buffer->width;
     buffer->info.bmiHeader.biHeight = -buffer->height;
@@ -86,28 +108,21 @@ internal void Win32ResizeDIBSection(Win32OffscreenBuffer *buffer, int width, int
 
     buffer->memory = VirtualAlloc(0, bitmap_memory_size, MEM_COMMIT, PAGE_READWRITE);
 
-    // TODO(mara): Clear this to black.
+    // TODO(mara): Clear this to black
 
     buffer->pitch = width * buffer->bytes_per_pixel;
 }
 
-internal void Win32CopyBufferToWindow(HDC device_context,
-                                      RECT client_rect,
-                                      Win32OffscreenBuffer buffer,
-                                      int x,
-                                      int y,
-                                      int width,
-                                      int height)
+internal void Win32DisplayBufferInWindow(HDC device_context,
+                                         int window_width,
+                                         int window_height,
+                                         Win32OffscreenBuffer buffer)
 {
-    int window_width = client_rect.right - client_rect.left;
-    int window_height = client_rect.bottom - client_rect.top;
+    // TODO(mara): aspect ratio correction
+    // TODO(mara): play with stretch modes
     StretchDIBits(device_context,
-                  /*
-                    x, y, width, height,
-                    x, y, width, height,
-                  */
-                  0, 0, buffer.width, buffer.height,
-                  0, 0, window_width, window_height,
+                  0, 0, window_width, window_height, // dest
+                  0, 0, buffer.width, buffer.height, // src
                   buffer.memory,
                   &buffer.info,
                   DIB_RGB_COLORS, SRCCOPY);
@@ -118,18 +133,13 @@ LRESULT CALLBACK Win32MainWindowCallback(HWND window,
                                          WPARAM w_param,
                                          LPARAM l_param)
 {
-    LRESULT result = 0; // Set to 0 and assume that we handled all the messages that we cared about.
+    // Set to 0 and assume that we handled all the messages that we cared about
+    LRESULT result = 0;
 
     switch (message)
     {
         case WM_SIZE:
         {
-            RECT client_rect;
-            GetClientRect(window, &client_rect);
-            int width = client_rect.right - client_rect.left;
-            int height = client_rect.bottom - client_rect.top;
-            Win32ResizeDIBSection(&global_backbuffer, width, height);
-            OutputDebugStringA("WM_SIZE\n");
         } break;
 
         case WM_ACTIVATEAPP:
@@ -140,13 +150,13 @@ LRESULT CALLBACK Win32MainWindowCallback(HWND window,
         case WM_CLOSE:
         {
             // TODO(mara): Handle this with a message to the user?
-            app_is_running = false;
+            global_is_running = false;
         } break;
 
         case WM_DESTROY:
         {
             // TODO(mara): Handle this as an error, recreate window?
-            app_is_running = false;
+            global_is_running = false;
         } break;
 
         case WM_PAINT:
@@ -159,12 +169,10 @@ LRESULT CALLBACK Win32MainWindowCallback(HWND window,
             int width = paint.rcPaint.right - paint.rcPaint.left;
             int height = paint.rcPaint.bottom - paint.rcPaint.top;
 
-            RECT client_rect;
-            GetClientRect(window, &client_rect);
+            Win32WindowDimensions dimensions = GetWindowDimensions(window);
 
-            Win32CopyBufferToWindow(device_context, client_rect,
-                              global_backbuffer,
-                              x, y, width, height);
+            Win32DisplayBufferInWindow(device_context, dimensions.width, dimensions.height,
+                                       global_backbuffer);
             EndPaint(window, &paint);
         } break;
 
@@ -184,7 +192,10 @@ int CALLBACK WinMain(HINSTANCE Instance,
                      int ShowCode)
 {
     WNDCLASS window_class = {};
-    window_class.style = CS_HREDRAW | CS_VREDRAW;
+
+    Win32ResizeDIBSection(&global_backbuffer, 1280, 720);
+
+    window_class.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
     window_class.lpfnWndProc = Win32MainWindowCallback;
     window_class.hInstance = Instance;
     window_class.lpszClassName = "HandmadeHeroWindowClass";
@@ -192,32 +203,34 @@ int CALLBACK WinMain(HINSTANCE Instance,
     if (RegisterClass(&window_class))
     {
         HWND window = CreateWindowEx(0,
-                                            window_class.lpszClassName,
-                                            "Handmade Hero",
-                                            WS_OVERLAPPEDWINDOW | WS_VISIBLE,
-                                            CW_USEDEFAULT,
-                                            CW_USEDEFAULT,
-                                            CW_USEDEFAULT,
-                                            CW_USEDEFAULT,
-                                            0,
-                                            0,
-                                            Instance,
-                                            0);
+                                     window_class.lpszClassName,
+                                     "Handmade Hero",
+                                     WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+                                     CW_USEDEFAULT,
+                                     CW_USEDEFAULT,
+                                     CW_USEDEFAULT,
+                                     CW_USEDEFAULT,
+                                     0,
+                                     0,
+                                     Instance,
+                                     0);
 
         if (window)
         {
+            // NOTE(mara): Since we specified CS_OWNDC, we can just get one device context and use
+            // it forever because we are not sharing it with anyone
             int x_offset = 0;
             int y_offset = 0;
 
-            app_is_running = true;
-            while (app_is_running)
+            global_is_running = true;
+            while (global_is_running)
             {
                 MSG message;
                 while (PeekMessage(&message, 0, 0, 0, PM_REMOVE))
                 {
                     if (message.message == WM_QUIT)
                     {
-                        app_is_running = false;
+                        global_is_running = false;
                     }
                     TranslateMessage(&message);
                     DispatchMessage(&message);
@@ -226,13 +239,9 @@ int CALLBACK WinMain(HINSTANCE Instance,
                 RenderWeirdGradient(global_backbuffer, x_offset, y_offset);
 
                 HDC device_context = GetDC(window);
-                RECT client_rect;
-                GetClientRect(window, &client_rect);
-                int window_width = client_rect.right - client_rect.left;
-                int window_height = client_rect.bottom - client_rect.top;
-                Win32CopyBufferToWindow(device_context, client_rect,
-                                        global_backbuffer,
-                                        0, 0, window_width, window_height);
+                Win32WindowDimensions dimensions = GetWindowDimensions(window);
+                Win32DisplayBufferInWindow(device_context, dimensions.width, dimensions.height,
+                                           global_backbuffer);
                 ReleaseDC(window, device_context);
 
                 ++x_offset;
