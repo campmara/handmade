@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <winuser.h>
 #include <xinput.h>
+#include <dsound.h>
 
 #define global        static // truly global
 #define internal      static // local to the file
@@ -18,6 +19,9 @@ typedef int8_t int8;
 typedef int16_t int16;
 typedef int32_t int32;
 typedef int64_t int64;
+
+// Booleans
+typedef int32 bool32;
 
 struct Win32OffscreenBuffer
 {
@@ -47,7 +51,7 @@ typedef XINPUT_GET_STATE(xinput_get_state);
 
 XINPUT_GET_STATE(XInputGetStateStub)
 {
-    return(0);
+    return(ERROR_DEVICE_NOT_CONNECTED);
 }
 global xinput_get_state *XInputGetState_ = XInputGetStateStub;
 #define XInputGetState XInputGetState_
@@ -57,20 +61,79 @@ global xinput_get_state *XInputGetState_ = XInputGetStateStub;
 typedef XINPUT_SET_STATE(xinput_set_state);
 XINPUT_SET_STATE(XInputSetStateStub)
 {
-    return(0);
+    return(ERROR_DEVICE_NOT_CONNECTED);
 }
 global xinput_set_state *XInputSetState_ = XInputSetStateStub;
 #define XInputSetState XInputSetState_
 
+#define DIRECT_SOUND_CREATE(name) HRESULT WINAPI name(LPCGUID pcGuidDevice, LPDIRECTSOUND *ppDS, LPUNKNOWN pUnkOuter)
+typedef DIRECT_SOUND_CREATE(direct_sound_create);
+
 internal void Win32LoadXInput(void)
 {
+    // TODO(mara): Test this on Windows 7
     HMODULE xinput_library = LoadLibraryA("xinput1_4.dll");
+    if (!xinput_library)
+    {
+        //TODO(mara): Diagnostic
+        xinput_library = LoadLibraryA("xinput1_3.dll");
+    }
+
     if (xinput_library)
     {
         XInputGetState = (xinput_get_state *)GetProcAddress(xinput_library, "XInputGetState");
         if (!XInputGetState) { XInputGetState = XInputGetStateStub; }
         XInputSetState = (xinput_set_state *)GetProcAddress(xinput_library, "XInputSetState");
         if (!XInputSetState) { XInputSetState = XInputSetStateStub; }
+    }
+    else
+    {
+        // TODO(mara): Diagnostic
+    }
+}
+
+internal void Win32InitDirectSound(HWND window)
+{
+    // NOTE(mara): Load the library
+    HMODULE direct_sound_library = LoadLibraryA("dsound.dll");
+
+    if (direct_sound_library)
+    {
+        // NOTE(mara): Get a DirectSound Object! - cooperative
+        direct_sound_create *DirectSoundCreate = 
+            (direct_sound_create *)GetProcAddress(direct_sound_library, "DirectSoundCreate");
+
+        LPDIRECTSOUND direct_sound;
+        if (DirectSoundCreate && SUCCEEDED(DirectSoundCreate(0, &direct_sound, 0)))
+        {
+            if (SUCCEEDED(direct_sound->SetCooperativeLevel(window, DSSCL_PRIORITY)))
+            {
+                DSBUFFERDESC buffer_desc = {sizeof(buffer_desc)};
+                //buffer_desc.
+                LPDIRECTSOUNDBUFFER primary_buffer;
+                if (SUCCEEDED(direct_sound->CreateSoundBuffer(&buffer_desc, &primary_buffer, 0)))
+                {
+
+                }
+            }
+            else
+            {
+                // TODO(mara): Diagnostic
+            }
+            // NOTE(mara): Create a primary buffer
+
+            // NOTE(mara): Create a secondary buffer
+
+            // NOTE(mara): Start playing sound!
+        }
+        else
+        {
+            // TODO(mara): Diagnostic
+        }
+    }
+    else
+    {
+        // TODO(mara) Diagnostic
     }
 }
 
@@ -254,6 +317,11 @@ LRESULT CALLBACK Win32MainWindowCallback(HWND window,
                 }
             }
 
+            bool32 alt_key_was_down = (l_param & (1 << 29));
+            if (vk_code == VK_F4 && alt_key_was_down)
+            {
+                global_is_running = false;
+            }
         } break;
 
 
@@ -321,8 +389,12 @@ int CALLBACK WinMain(HINSTANCE Instance,
         {
             // NOTE(mara): Since we specified CS_OWNDC, we can just get one device context and use
             // it forever because we are not sharing it with anyone
+            HDC device_context = GetDC(window);
+
             int x_offset = 0;
             int y_offset = 0;
+
+            Win32InitDirectSound(window);
 
             global_is_running = true;
             while (global_is_running)
@@ -380,13 +452,11 @@ int CALLBACK WinMain(HINSTANCE Instance,
 
                 RenderWeirdGradient(&global_backbuffer, x_offset, y_offset);
 
-                HDC device_context = GetDC(window);
                 Win32WindowDimensions dimensions = GetWindowDimensions(window);
                 Win32DisplayBufferInWindow(&global_backbuffer,
                                            device_context,
                                            dimensions.width,
                                            dimensions.height);
-                ReleaseDC(window, device_context);
             }
         }
         else
