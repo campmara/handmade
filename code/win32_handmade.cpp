@@ -92,7 +92,7 @@ internal void Win32LoadXInput(void)
     }
 }
 
-internal void Win32InitDirectSound(HWND window)
+internal void Win32InitDirectSound(HWND window, int32 samples_per_second, int32 buffer_size)
 {
     // NOTE(mara): Load the library
     HMODULE direct_sound_library = LoadLibraryA("dsound.dll");
@@ -100,29 +100,71 @@ internal void Win32InitDirectSound(HWND window)
     if (direct_sound_library)
     {
         // NOTE(mara): Get a DirectSound Object! - cooperative
-        direct_sound_create *DirectSoundCreate = 
+        direct_sound_create *DirectSoundCreate =
             (direct_sound_create *)GetProcAddress(direct_sound_library, "DirectSoundCreate");
 
         LPDIRECTSOUND direct_sound;
         if (DirectSoundCreate && SUCCEEDED(DirectSoundCreate(0, &direct_sound, 0)))
         {
+            WAVEFORMATEX wave_format = {};
+            wave_format.wFormatTag = WAVE_FORMAT_PCM;
+            wave_format.nChannels = 2;
+            wave_format.nSamplesPerSec = samples_per_second;
+            wave_format.wBitsPerSample = 16;
+            wave_format.nBlockAlign = (wave_format.nChannels * wave_format.wBitsPerSample) / 8;
+            wave_format.nAvgBytesPerSec = wave_format.nSamplesPerSec * wave_format.nBlockAlign;
+            wave_format.cbSize = 0;
+
             if (SUCCEEDED(direct_sound->SetCooperativeLevel(window, DSSCL_PRIORITY)))
             {
-                DSBUFFERDESC buffer_desc = {sizeof(buffer_desc)};
-                //buffer_desc.
+                DSBUFFERDESC buffer_desc = {};
+                buffer_desc.dwSize = sizeof(buffer_desc);
+                buffer_desc.dwFlags = DSBCAPS_PRIMARYBUFFER;
+
+                // NOTE(mara): Create a primary buffer. This is not a real buffer, it just gives us
+                // a handle into the sound card in order to tell it how to handle our sound.
                 LPDIRECTSOUNDBUFFER primary_buffer;
                 if (SUCCEEDED(direct_sound->CreateSoundBuffer(&buffer_desc, &primary_buffer, 0)))
                 {
-
+                    HRESULT error = primary_buffer->SetFormat(&wave_format);
+                    if (SUCCEEDED(error))
+                    {
+                        // NOTE(mara): we have finally set the format!
+                        OutputDebugStringA("Primary buffer format was set.\n");
+                    }
+                    else
+                    {
+                        // TODO(mara): Diagnostic
+                    }
+                }
+                else
+                {
+                    // TODO(mara): Diagnostic
                 }
             }
             else
             {
                 // TODO(mara): Diagnostic
             }
-            // NOTE(mara): Create a primary buffer
+
+            // TODO(mara): DSBCAPS_GETCURRENTPOSITION2
+            DSBUFFERDESC buffer_desc = {};
+            buffer_desc.dwSize = sizeof(buffer_desc);
+            buffer_desc.dwFlags = 0;
+            buffer_desc.dwBufferBytes = buffer_size;
+            buffer_desc.lpwfxFormat = &wave_format;
 
             // NOTE(mara): Create a secondary buffer
+            LPDIRECTSOUNDBUFFER secondary_buffer;
+            HRESULT error = direct_sound->CreateSoundBuffer(&buffer_desc, &secondary_buffer, 0);
+            if (SUCCEEDED(error))
+            {
+                OutputDebugStringA("Secondary buffer created successfully.\n");
+            }
+            else
+            {
+                // TODO(mara): Diagnostic
+            }
 
             // NOTE(mara): Start playing sound!
         }
@@ -190,8 +232,8 @@ internal void Win32ResizeDIBSection(Win32OffscreenBuffer *buffer, int width, int
     buffer->height = height;
     buffer->bytes_per_pixel = 4;
 
-    // NOTE(mara): when the biHeight field is negative, this is the clue to Windows to treat this 
-    // bitmap as top-down, not bottom-up, meaning that the first three bytes of the image are the 
+    // NOTE(mara): when the biHeight field is negative, this is the clue to Windows to treat this
+    // bitmap as top-down, not bottom-up, meaning that the first three bytes of the image are the
     // color for the top left pixel in the bitmap, not the bottom left!
     buffer->info.bmiHeader.biSize = sizeof(buffer->info.bmiHeader);
     buffer->info.bmiHeader.biWidth = buffer->width;
@@ -394,7 +436,7 @@ int CALLBACK WinMain(HINSTANCE Instance,
             int x_offset = 0;
             int y_offset = 0;
 
-            Win32InitDirectSound(window);
+            Win32InitDirectSound(window, 48000, 48000 * sizeof(int16) * 2);
 
             global_is_running = true;
             while (global_is_running)
@@ -441,7 +483,7 @@ int CALLBACK WinMain(HINSTANCE Instance,
                     else
                     {
                         // NOTE(mara): The controller is not available
-                        
+
                     }
                 }
 
