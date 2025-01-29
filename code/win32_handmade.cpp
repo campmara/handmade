@@ -44,6 +44,7 @@ struct Win32WindowDimensions
 // TODO(mara): These are globals for now
 global bool                 global_is_running;
 global Win32OffscreenBuffer global_backbuffer;
+global LPDIRECTSOUNDBUFFER  global_secondary_buffer;
 
 // NOTE(mara): XInputGetState
 #define XINPUT_GET_STATE(name) DWORD WINAPI name(DWORD dwUserIndex, XINPUT_STATE *pState)
@@ -154,9 +155,8 @@ internal void Win32InitDirectSound(HWND window, int32 samples_per_second, int32 
             buffer_desc.dwBufferBytes = buffer_size;
             buffer_desc.lpwfxFormat = &wave_format;
 
-            // NOTE(mara): Create a secondary buffer
-            LPDIRECTSOUNDBUFFER secondary_buffer;
-            HRESULT error = direct_sound->CreateSoundBuffer(&buffer_desc, &secondary_buffer, 0);
+            // NOTE(mara): Create a secondary buffer, the buffer we can actually write into
+            HRESULT error = direct_sound->CreateSoundBuffer(&buffer_desc, &global_secondary_buffer, 0);
             if (SUCCEEDED(error))
             {
                 OutputDebugStringA("Secondary buffer created successfully.\n");
@@ -493,6 +493,15 @@ int CALLBACK WinMain(HINSTANCE Instance,
                 XInputSetState(0, &vibration);*/
 
                 RenderWeirdGradient(&global_backbuffer, x_offset, y_offset);
+
+                // NOTE(mara): DirectSound output test
+                /*HRESULT Lock(DWORD dwOffset,
+                             DWORD dwBytes,
+                             LPVOID * ppvAudioPtr1,
+                             LPDWORD  pdwAudioBytes1,
+                             LPVOID * ppvAudioPtr2,
+                             LPDWORD pdwAudioBytes2,
+                             DWORD dwFlags)*/
 
                 Win32WindowDimensions dimensions = GetWindowDimensions(window);
                 Win32DisplayBufferInWindow(&global_backbuffer,
