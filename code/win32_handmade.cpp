@@ -1,5 +1,6 @@
 #include <Windows.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <winuser.h>
 #include <xinput.h>
 #include <dsound.h>
@@ -480,6 +481,10 @@ int CALLBACK WinMain(HINSTANCE Instance,
                      LPSTR CommandLine,
                      int ShowCode)
 {
+    LARGE_INTEGER perf_count_frequency_result;
+    QueryPerformanceFrequency(&perf_count_frequency_result);
+    int64 perf_count_frequency = perf_count_frequency_result.QuadPart;
+
     Win32LoadXInput();
 
     WNDCLASSA window_class = {};
@@ -531,6 +536,11 @@ int CALLBACK WinMain(HINSTANCE Instance,
             Win32InitDirectSound(window, sound_output.samples_per_second, sound_output.secondary_buffer_size);
             Win32FillSoundBuffer(&sound_output, 0, sound_output.latency_sample_count * sound_output.secondary_buffer_size);
             global_secondary_buffer->Play(0, 0, DSBPLAY_LOOPING);
+
+            // Most recent frame clock time
+            uint64 last_cycle_count = __rdtsc();
+            LARGE_INTEGER last_counter;
+            QueryPerformanceCounter(&last_counter);
 
             global_is_running = true;
             while (global_is_running)
@@ -628,6 +638,25 @@ int CALLBACK WinMain(HINSTANCE Instance,
                                            device_context,
                                            dimensions.width,
                                            dimensions.height);
+
+                // Counter that tracks the end of every frame
+                uint64 end_cycle_count = __rdtsc();
+                LARGE_INTEGER end_counter;
+                QueryPerformanceCounter(&end_counter);
+
+                // TODO(mara): Display the value here
+                uint64 cycles_elapsed = end_cycle_count - last_cycle_count;
+                int64 counter_elapsed = end_counter.QuadPart - last_counter.QuadPart;
+                real64 ms_per_frame = ((1000.0 * (real64)counter_elapsed) / (real64)perf_count_frequency);
+                real64 fps = (real64)perf_count_frequency / (real64)counter_elapsed;
+                real64 mcpf = ((real64)cycles_elapsed / (1000.0 * 1000.0));
+
+                char buffer[256];
+                sprintf(buffer, "| %.02fms/f | %.02ff/s | %.02fmc/f |\n", ms_per_frame, fps, mcpf);
+                OutputDebugStringA(buffer);
+
+                last_counter = end_counter;
+                last_cycle_count = end_cycle_count;
             }
         }
         else
