@@ -433,10 +433,22 @@ int CALLBACK WinMain(HINSTANCE Instance,
             // it forever because we are not sharing it with anyone
             HDC device_context = GetDC(window);
 
+            // NOTE(mara): graphics test
             int x_offset = 0;
             int y_offset = 0;
 
-            Win32InitDirectSound(window, 48000, 48000 * sizeof(int16) * 2);
+            // NOTE(mara): sound test
+            int samples_per_second = 48000;
+            int tone_hz = 256;
+            int16 tone_volume = 2000;
+            uint32 running_sample_index = 0;
+            int square_wave_period = samples_per_second / tone_hz;
+            int half_square_wave_period = square_wave_period / 2;
+            int bytes_per_sample = sizeof(int16) * 2;
+            int secondary_buffer_size = samples_per_second * bytes_per_sample;
+
+            Win32InitDirectSound(window, samples_per_second, secondary_buffer_size);
+            bool32 is_sound_playing = false;
 
             global_is_running = true;
             while (global_is_running)
@@ -495,13 +507,71 @@ int CALLBACK WinMain(HINSTANCE Instance,
                 RenderWeirdGradient(&global_backbuffer, x_offset, y_offset);
 
                 // NOTE(mara): DirectSound output test
-                /*HRESULT Lock(DWORD dwOffset,
-                             DWORD dwBytes,
-                             LPVOID * ppvAudioPtr1,
-                             LPDWORD  pdwAudioBytes1,
-                             LPVOID * ppvAudioPtr2,
-                             LPDWORD pdwAudioBytes2,
-                             DWORD dwFlags)*/
+                DWORD play_cursor;
+                DWORD write_cursor;
+                if (SUCCEEDED(global_secondary_buffer->GetCurrentPosition(&play_cursor,
+                                                                          &write_cursor)))
+                {
+                    DWORD byte_to_lock = running_sample_index * bytes_per_sample % secondary_buffer_size;
+                    DWORD bytes_to_write; // number of bytes total to write into the buffer.
+                    if (byte_to_lock == play_cursor)
+                    {
+                        bytes_to_write = secondary_buffer_size;
+                    }
+                    else if (byte_to_lock > play_cursor)
+                    {
+                        bytes_to_write = (secondary_buffer_size - byte_to_lock);
+                        bytes_to_write += play_cursor;
+                    }
+                    else
+                    {
+                        bytes_to_write = play_cursor - byte_to_lock;
+                    }
+
+                    // TODO(mara): More stenuous test please!
+                    // TODO(mara): Switch to a sine wave.
+                    void *region1;
+                    DWORD region1_size;
+                    VOID *region2;
+                    DWORD region2_size;
+                    if (SUCCEEDED(global_secondary_buffer->Lock(byte_to_lock, bytes_to_write,
+                                                                &region1, &region1_size,
+                                                                &region2, &region2_size,
+                                                                0)))
+                    {
+                        // TODO(mara): assert that region1_size/region2_size is valid
+                        DWORD region1_sample_count = region1_size / bytes_per_sample;
+                        int16 *sample_out = (int16 *)region1;
+                        for (DWORD sample_index = 0; sample_index < region1_sample_count; ++sample_index)
+                        {
+                            int16 sample_value = ((running_sample_index++ / half_square_wave_period) % 2) ? tone_volume : -tone_volume;
+                            *sample_out++ = sample_value;
+                            *sample_out++ = sample_value;
+                        }
+
+                        DWORD region2_sample_count = region2_size / bytes_per_sample;
+                        sample_out = (int16 *)region2;
+                        for (DWORD sample_index = 0; sample_index < region2_sample_count; ++sample_index)
+                        {
+                            int16 sample_value = ((running_sample_index++ / half_square_wave_period) % 2) ? tone_volume : -tone_volume;
+                            *sample_out++ = sample_value;
+                            *sample_out++ = sample_value;
+                        }
+
+                        if (SUCCEEDED(global_secondary_buffer->Unlock(region1, region1_size,
+                                                                      region2, region2_size)))
+                        {
+                        }
+                    }
+                }
+
+                if (!is_sound_playing)
+                {
+                    if (SUCCEEDED(global_secondary_buffer->Play(0, 0, DSBPLAY_LOOPING)))
+                    {
+                        is_sound_playing = true;
+                    }
+                }
 
                 Win32WindowDimensions dimensions = GetWindowDimensions(window);
                 Win32DisplayBufferInWindow(&global_backbuffer,
