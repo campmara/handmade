@@ -4,9 +4,14 @@
 #include <xinput.h>
 #include <dsound.h>
 
+// TODO(mara): implement sin ourselves!
+#include <math.h>
+
 #define global        static // truly global
 #define internal      static // local to the file
 #define local_persist static // local to the scope
+
+#define PI_32 3.14159265359f
 
 // Unsigned integer types
 typedef uint8_t uint8;
@@ -19,6 +24,10 @@ typedef int8_t int8;
 typedef int16_t int16;
 typedef int32_t int32;
 typedef int64_t int64;
+
+// Real-number types
+typedef float real32;
+typedef double real64;
 
 // Booleans
 typedef int32 bool32;
@@ -77,6 +86,12 @@ internal void Win32LoadXInput(void)
     if (!xinput_library)
     {
         //TODO(mara): Diagnostic
+        xinput_library = LoadLibraryA("Xinput9_1_0.dll");
+    }
+
+    if (!xinput_library)
+    {
+        //TODO(mara): Diagnostic
         xinput_library = LoadLibraryA("xinput1_3.dll");
     }
 
@@ -101,8 +116,7 @@ internal void Win32InitDirectSound(HWND window, int32 samples_per_second, int32 
     if (direct_sound_library)
     {
         // NOTE(mara): Get a DirectSound Object! - cooperative
-        direct_sound_create *DirectSoundCreate =
-            (direct_sound_create *)GetProcAddress(direct_sound_library, "DirectSoundCreate");
+        direct_sound_create *DirectSoundCreate = (direct_sound_create *)GetProcAddress(direct_sound_library, "DirectSoundCreate");
 
         LPDIRECTSOUND direct_sound;
         if (DirectSoundCreate && SUCCEEDED(DirectSoundCreate(0, &direct_sound, 0)))
@@ -388,12 +402,77 @@ LRESULT CALLBACK Win32MainWindowCallback(HWND window,
 
         default:
         {
-            result = DefWindowProc(window, message, w_param, l_param);
+            result = DefWindowProcA(window, message, w_param, l_param);
             // OutputDebugStringA("default\n");
         } break;
     }
 
     return result;
+}
+
+struct Win32SoundOutput
+{
+    int    samples_per_second;
+    int    tone_hz;
+    int16  tone_volume;
+    uint32 running_sample_index;
+    int    wave_period;
+    int    bytes_per_sample;
+    int    secondary_buffer_size;
+    real32 t_sine;
+    int    latency_sample_count; // how many samples away from the cursor we'd like to be in general
+};
+
+void Win32FillSoundBuffer(Win32SoundOutput *sound_output, DWORD byte_to_lock, DWORD bytes_to_write)
+{
+    // TODO(mara): More strenuous test please!
+    // TODO(mara): Switch to a sine wave.
+    void *region1;
+    DWORD region1_size;
+    VOID *region2;
+    DWORD region2_size;
+    if (SUCCEEDED(global_secondary_buffer->Lock(byte_to_lock, bytes_to_write,
+                                                &region1, &region1_size,
+                                                &region2, &region2_size,
+                                                0)))
+    {
+        // TODO(mara): assert that region1_size/region2_size is valid
+        // TODO(mara): collapse these two for loops!!!
+        DWORD region1_sample_count = region1_size / sound_output->bytes_per_sample;
+        int16 *sample_out = (int16 *)region1;
+        for (DWORD sample_index = 0; sample_index < region1_sample_count; ++sample_index)
+        {
+            real32 sine_value = sinf(sound_output->t_sine);
+            int16 sample_value = (int16)(sine_value * sound_output->tone_volume); // scale up to the volume hz
+            *sample_out++ = sample_value;
+            *sample_out++ = sample_value;
+
+            sound_output->t_sine += 2.0f * PI_32 * 1.0f / (real32)sound_output->wave_period;
+            ++sound_output->running_sample_index;
+        }
+
+        DWORD region2_sample_count = region2_size / sound_output->bytes_per_sample;
+        sample_out = (int16 *)region2;
+        for (DWORD sample_index = 0; sample_index < region2_sample_count; ++sample_index)
+        {
+            real32 sine_value = sinf(sound_output->t_sine);
+            int16 sample_value = (int16)(sine_value * sound_output->tone_volume); // scale up to the volume hz
+            *sample_out++ = sample_value;
+            *sample_out++ = sample_value;
+
+            sound_output->t_sine += 2.0f * PI_32 * 1.0f / (real32)sound_output->wave_period;
+            ++sound_output->running_sample_index;
+        }
+
+        global_secondary_buffer->Unlock(region1, region1_size,
+                                        region2, region2_size);
+    }
+}
+
+void Win32ChangeSoundTone(Win32SoundOutput *sound_output, int new_hz)
+{
+    sound_output->tone_hz = new_hz;
+    sound_output->wave_period = sound_output->samples_per_second / sound_output->tone_hz;
 }
 
 int CALLBACK WinMain(HINSTANCE Instance,
@@ -437,18 +516,21 @@ int CALLBACK WinMain(HINSTANCE Instance,
             int x_offset = 0;
             int y_offset = 0;
 
-            // NOTE(mara): sound test
-            int samples_per_second = 48000;
-            int tone_hz = 256;
-            int16 tone_volume = 2000;
-            uint32 running_sample_index = 0;
-            int square_wave_period = samples_per_second / tone_hz;
-            int half_square_wave_period = square_wave_period / 2;
-            int bytes_per_sample = sizeof(int16) * 2;
-            int secondary_buffer_size = samples_per_second * bytes_per_sample;
+            // TODO(mara): make this 60 seconds?
+            Win32SoundOutput sound_output = {};
+            sound_output.samples_per_second = 48000;
+            sound_output.tone_hz = 256;
+            sound_output.tone_volume = 1000;
+            sound_output.running_sample_index = 0;
+            sound_output.wave_period = sound_output.samples_per_second / sound_output.tone_hz;
+            sound_output.bytes_per_sample = sizeof(int16) * 2;
+            sound_output.secondary_buffer_size = sound_output.samples_per_second * sound_output.bytes_per_sample;
+            sound_output.latency_sample_count = sound_output.samples_per_second / 15;
+            sound_output.t_sine = 0;
 
-            Win32InitDirectSound(window, samples_per_second, secondary_buffer_size);
-            bool32 is_sound_playing = false;
+            Win32InitDirectSound(window, sound_output.samples_per_second, sound_output.secondary_buffer_size);
+            Win32FillSoundBuffer(&sound_output, 0, sound_output.latency_sample_count * sound_output.secondary_buffer_size);
+            global_secondary_buffer->Play(0, 0, DSBPLAY_LOOPING);
 
             global_is_running = true;
             while (global_is_running)
@@ -473,24 +555,32 @@ int CALLBACK WinMain(HINSTANCE Instance,
                         // NOTE(mara): This controller is plugged in
                         // TODO(mara): See if controller_state.dwPacketNumber increments
                         XINPUT_GAMEPAD *pad = &controller_state.Gamepad;
-                        bool dpad_up = (pad->wButtons & XINPUT_GAMEPAD_DPAD_UP);
-                        bool dpad_down = (pad->wButtons & XINPUT_GAMEPAD_DPAD_DOWN);
-                        bool dpad_left = (pad->wButtons & XINPUT_GAMEPAD_DPAD_LEFT);
-                        bool dpad_right = (pad->wButtons & XINPUT_GAMEPAD_DPAD_RIGHT);
-                        bool start = (pad->wButtons & XINPUT_GAMEPAD_START);
-                        bool back = (pad->wButtons & XINPUT_GAMEPAD_BACK);
-                        bool left_shoulder = (pad->wButtons & XINPUT_GAMEPAD_LEFT_SHOULDER);
-                        bool right_shoulder = (pad->wButtons & XINPUT_GAMEPAD_RIGHT_SHOULDER);
-                        bool a_button = (pad->wButtons & XINPUT_GAMEPAD_A);
-                        bool b_button = (pad->wButtons & XINPUT_GAMEPAD_B);
-                        bool x_button = (pad->wButtons & XINPUT_GAMEPAD_X);
-                        bool y_button = (pad->wButtons & XINPUT_GAMEPAD_Y);
+                        bool32 dpad_up = (pad->wButtons & XINPUT_GAMEPAD_DPAD_UP);
+                        bool32 dpad_down = (pad->wButtons & XINPUT_GAMEPAD_DPAD_DOWN);
+                        bool32 dpad_left = (pad->wButtons & XINPUT_GAMEPAD_DPAD_LEFT);
+                        bool32 dpad_right = (pad->wButtons & XINPUT_GAMEPAD_DPAD_RIGHT);
+                        bool32 start = (pad->wButtons & XINPUT_GAMEPAD_START);
+                        bool32 back = (pad->wButtons & XINPUT_GAMEPAD_BACK);
+                        bool32 left_shoulder = (pad->wButtons & XINPUT_GAMEPAD_LEFT_SHOULDER);
+                        bool32 right_shoulder = (pad->wButtons & XINPUT_GAMEPAD_RIGHT_SHOULDER);
+                        bool32 a_button = (pad->wButtons & XINPUT_GAMEPAD_A);
+                        bool32 b_button = (pad->wButtons & XINPUT_GAMEPAD_B);
+                        bool32 x_button = (pad->wButtons & XINPUT_GAMEPAD_X);
+                        bool32 y_button = (pad->wButtons & XINPUT_GAMEPAD_Y);
 
                         int16 stick_x = pad->sThumbLX;
                         int16 stick_y = pad->sThumbLY;
 
-                        x_offset += stick_x >> 12;
-                        y_offset -= stick_y >> 12;
+                        //TODO(mara): we will do deadzone handling later properly using
+                        // XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE and
+                        // XINPUT_GAMEPAD_RIGHT_THUMB_DEADZONE
+
+                        // Kill the controller noise at deadzones
+                        x_offset += stick_x / 4096;
+                        y_offset -= stick_y / 4096;
+
+                        sound_output.tone_hz = 512 + (int)(256.0f * ((real32)stick_y / 30000.0f));
+                        sound_output.wave_period = sound_output.samples_per_second / sound_output.tone_hz;
                     }
                     else
                     {
@@ -500,77 +590,37 @@ int CALLBACK WinMain(HINSTANCE Instance,
                 }
 
                 /*XINPUT_VIBRATION vibration;
-                vibration.wLeftMotorSpeed = 6000;
-                vibration.wRightMotorSpeed = 6000;
-                XInputSetState(0, &vibration);*/
+                  vibration.wLeftMotorSpeed = 6000;
+                  vibration.wRightMotorSpeed = 6000;
+                  XInputSetState(0, &vibration);*/
 
                 RenderWeirdGradient(&global_backbuffer, x_offset, y_offset);
 
                 // NOTE(mara): DirectSound output test
                 DWORD play_cursor;
                 DWORD write_cursor;
-                if (SUCCEEDED(global_secondary_buffer->GetCurrentPosition(&play_cursor,
-                                                                          &write_cursor)))
+                if (SUCCEEDED(global_secondary_buffer->GetCurrentPosition(&play_cursor, &write_cursor)))
                 {
-                    DWORD byte_to_lock = running_sample_index * bytes_per_sample % secondary_buffer_size;
+                    DWORD byte_to_lock = (sound_output.running_sample_index * sound_output.bytes_per_sample) % sound_output.secondary_buffer_size;
+
+                    DWORD target_cursor = ((play_cursor +
+                                            (sound_output.latency_sample_count * sound_output.bytes_per_sample)) %
+                                           sound_output.secondary_buffer_size);
                     DWORD bytes_to_write; // number of bytes total to write into the buffer.
-                    if (byte_to_lock == play_cursor)
+
+                    // TODO(mara): change this to using a lower latency offset from the play cursor
+                    // when we actually start having sound effects.
+                    if (byte_to_lock > target_cursor)
                     {
-                        bytes_to_write = secondary_buffer_size;
-                    }
-                    else if (byte_to_lock > play_cursor)
-                    {
-                        bytes_to_write = (secondary_buffer_size - byte_to_lock);
-                        bytes_to_write += play_cursor;
+                        bytes_to_write = (sound_output.secondary_buffer_size - byte_to_lock);
+                        bytes_to_write += target_cursor;
                     }
                     else
                     {
-                        bytes_to_write = play_cursor - byte_to_lock;
+                        bytes_to_write = target_cursor - byte_to_lock;
                     }
 
-                    // TODO(mara): More stenuous test please!
-                    // TODO(mara): Switch to a sine wave.
-                    void *region1;
-                    DWORD region1_size;
-                    VOID *region2;
-                    DWORD region2_size;
-                    if (SUCCEEDED(global_secondary_buffer->Lock(byte_to_lock, bytes_to_write,
-                                                                &region1, &region1_size,
-                                                                &region2, &region2_size,
-                                                                0)))
-                    {
-                        // TODO(mara): assert that region1_size/region2_size is valid
-                        DWORD region1_sample_count = region1_size / bytes_per_sample;
-                        int16 *sample_out = (int16 *)region1;
-                        for (DWORD sample_index = 0; sample_index < region1_sample_count; ++sample_index)
-                        {
-                            int16 sample_value = ((running_sample_index++ / half_square_wave_period) % 2) ? tone_volume : -tone_volume;
-                            *sample_out++ = sample_value;
-                            *sample_out++ = sample_value;
-                        }
-
-                        DWORD region2_sample_count = region2_size / bytes_per_sample;
-                        sample_out = (int16 *)region2;
-                        for (DWORD sample_index = 0; sample_index < region2_sample_count; ++sample_index)
-                        {
-                            int16 sample_value = ((running_sample_index++ / half_square_wave_period) % 2) ? tone_volume : -tone_volume;
-                            *sample_out++ = sample_value;
-                            *sample_out++ = sample_value;
-                        }
-
-                        if (SUCCEEDED(global_secondary_buffer->Unlock(region1, region1_size,
-                                                                      region2, region2_size)))
-                        {
-                        }
-                    }
-                }
-
-                if (!is_sound_playing)
-                {
-                    if (SUCCEEDED(global_secondary_buffer->Play(0, 0, DSBPLAY_LOOPING)))
-                    {
-                        is_sound_playing = true;
-                    }
+                    Win32FillSoundBuffer(&sound_output, byte_to_lock, bytes_to_write);
                 }
 
                 Win32WindowDimensions dimensions = GetWindowDimensions(window);
