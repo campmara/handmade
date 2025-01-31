@@ -1,12 +1,25 @@
-#include <Windows.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <winuser.h>
-#include <xinput.h>
-#include <dsound.h>
+/*
+  TODO(mara): THIS IS NOT A FINAL PLATFORM LAYER!!!
 
-// TODO(mara): implement sin ourselves!
-#include <math.h>
+  - saved game locations
+  - getting a handle to our own executable file
+  - asset loading path
+  - threading (launch a thread)
+  - raw input (support for multiple keyboards)
+  - sleep / timeBeginPeriod
+  - ClipCursor() (for multimonitor support)
+  - fullscreen support
+  - WM_SETCURSOR (control cursor visibility)
+  - QueryCancelAutoplay
+  - WM_ACTIVATEAPP (for when we are not the active application)
+  - Blit speed improvements
+  - Hardware acceleration (OpenGL or Direct3D or BOTH?)
+  - GetKeyboardLayout (for French keyboards, international WASD support)
+
+  Just a partial list of stuff!!
+ */
+
+#include <stdint.h>
 
 #define global        static // truly global
 #define internal      static // local to the file
@@ -32,6 +45,17 @@ typedef double real64;
 
 // Booleans
 typedef int32 bool32;
+
+#include "handmade.cpp"
+
+#include <Windows.h>
+#include <stdio.h>
+#include <winuser.h>
+#include <xinput.h>
+#include <dsound.h>
+
+// TODO(mara): implement sin ourselves!
+#include <math.h>
 
 struct Win32OffscreenBuffer
 {
@@ -204,33 +228,6 @@ internal Win32WindowDimensions GetWindowDimensions(HWND window)
     result.height = client_rect.bottom - client_rect.top;
 
     return result;
-}
-
-internal void RenderWeirdGradient(Win32OffscreenBuffer *buffer, int blue_offset, int green_offset)
-{
-    // read the bitmap memory in a form we understand, not just void *
-    uint8 *row = (uint8 *)buffer->memory;
-    for (int y = 0; y < buffer->height; ++y)
-    {
-        uint32 *pixel = (uint32 *)row;
-        for (int x = 0; x < buffer->width; ++x)
-        {
-            /*
-              Memory:   BB GG RR xx
-              Register: xx RR GG BB
-
-              LITTLE ENDIAN ARCHITECTURE! REMEMBER IT'S BACKWARDS IF WE'RE DEALING WITH BYTES
-              Windows programmers wanted it to look right in the hex values, so it looks like this:
-
-              0x xxRRGGBB
-             */
-            uint8 blue = (x + blue_offset);
-            uint8 green = (y + green_offset);
-            *pixel++ = ((green << 8) | blue);
-        }
-
-        row += buffer->pitch;
-    }
 }
 
 internal void Win32ResizeDIBSection(Win32OffscreenBuffer *buffer, int width, int height)
@@ -427,7 +424,6 @@ struct Win32SoundOutput
 void Win32FillSoundBuffer(Win32SoundOutput *sound_output, DWORD byte_to_lock, DWORD bytes_to_write)
 {
     // TODO(mara): More strenuous test please!
-    // TODO(mara): Switch to a sine wave.
     void *region1;
     DWORD region1_size;
     VOID *region2;
@@ -604,7 +600,12 @@ int CALLBACK WinMain(HINSTANCE Instance,
                   vibration.wRightMotorSpeed = 6000;
                   XInputSetState(0, &vibration);*/
 
-                RenderWeirdGradient(&global_backbuffer, x_offset, y_offset);
+                GameOffscreenBuffer buffer = {};
+                buffer.memory = global_backbuffer.memory;
+                buffer.width = global_backbuffer.width;
+                buffer.height = global_backbuffer.height;
+                buffer.pitch = global_backbuffer.pitch;
+                GameUpdateAndRender(&buffer, x_offset, y_offset);
 
                 // NOTE(mara): DirectSound output test
                 DWORD play_cursor;
@@ -618,8 +619,6 @@ int CALLBACK WinMain(HINSTANCE Instance,
                                            sound_output.secondary_buffer_size);
                     DWORD bytes_to_write; // number of bytes total to write into the buffer.
 
-                    // TODO(mara): change this to using a lower latency offset from the play cursor
-                    // when we actually start having sound effects.
                     if (byte_to_lock > target_cursor)
                     {
                         bytes_to_write = (sound_output.secondary_buffer_size - byte_to_lock);
@@ -644,16 +643,17 @@ int CALLBACK WinMain(HINSTANCE Instance,
                 LARGE_INTEGER end_counter;
                 QueryPerformanceCounter(&end_counter);
 
-                // TODO(mara): Display the value here
                 uint64 cycles_elapsed = end_cycle_count - last_cycle_count;
                 int64 counter_elapsed = end_counter.QuadPart - last_counter.QuadPart;
                 real64 ms_per_frame = ((1000.0 * (real64)counter_elapsed) / (real64)perf_count_frequency);
                 real64 fps = (real64)perf_count_frequency / (real64)counter_elapsed;
                 real64 mcpf = ((real64)cycles_elapsed / (1000.0 * 1000.0));
 
+#if 0
                 char buffer[256];
                 sprintf(buffer, "| %.02fms/f | %.02ff/s | %.02fmc/f |\n", ms_per_frame, fps, mcpf);
                 OutputDebugStringA(buffer);
+#endif
 
                 last_counter = end_counter;
                 last_cycle_count = end_cycle_count;
