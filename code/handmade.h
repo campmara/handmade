@@ -19,7 +19,16 @@ struct GameOffscreenBuffer
     int         pitch;
 };
 
+struct GameSoundOutputBuffer
+{
+    int sample_count;
+    int samples_per_second;
+    int16 *samples;
+};
+
 // FOUR THINGS - timing, controller / keyboard input, bitmap buffer to use, sound buffer to use
-internal void GameUpdateAndRender(GameOffscreenBuffer *buffer, int blue_offset, int green_offset);
+internal void GameUpdateAndRender(GameOffscreenBuffer *offscreen_buffer,
+                                  int blue_offset, int green_offset,
+                                  GameSoundOutputBuffer *sound_buffer);
 
 #endif

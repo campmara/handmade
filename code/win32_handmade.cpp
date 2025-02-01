@@ -19,6 +19,8 @@
   Just a partial list of stuff!!
  */
 
+// TODO(mara): implement sin ourselves!
+#include <math.h>
 #include <stdint.h>
 
 #define global        static // truly global
@@ -53,9 +55,6 @@ typedef int32 bool32;
 #include <winuser.h>
 #include <xinput.h>
 #include <dsound.h>
-
-// TODO(mara): implement sin ourselves!
-#include <math.h>
 
 struct Win32OffscreenBuffer
 {
@@ -433,8 +432,6 @@ void Win32FillSoundBuffer(Win32SoundOutput *sound_output, DWORD byte_to_lock, DW
                                                 &region2, &region2_size,
                                                 0)))
     {
-        // TODO(mara): assert that region1_size/region2_size is valid
-        // TODO(mara): collapse these two for loops!!!
         DWORD region1_sample_count = region1_size / sound_output->bytes_per_sample;
         int16 *sample_out = (int16 *)region1;
         for (DWORD sample_index = 0; sample_index < region1_sample_count; ++sample_index)
@@ -462,7 +459,8 @@ void Win32FillSoundBuffer(Win32SoundOutput *sound_output, DWORD byte_to_lock, DW
         }
 
         global_secondary_buffer->Unlock(region1, region1_size,
-                                        region2, region2_size);
+                region2, region2_size);
+
     }
 }
 
@@ -600,12 +598,14 @@ int CALLBACK WinMain(HINSTANCE Instance,
                   vibration.wRightMotorSpeed = 6000;
                   XInputSetState(0, &vibration);*/
 
-                GameOffscreenBuffer buffer = {};
-                buffer.memory = global_backbuffer.memory;
-                buffer.width = global_backbuffer.width;
-                buffer.height = global_backbuffer.height;
-                buffer.pitch = global_backbuffer.pitch;
-                GameUpdateAndRender(&buffer, x_offset, y_offset);
+                GameSoundOutputBuffer sound_buffer = {};
+
+                GameOffscreenBuffer offscreen_buffer = {};
+                offscreen_buffer.memory = global_backbuffer.memory;
+                offscreen_buffer.width = global_backbuffer.width;
+                offscreen_buffer.weight = global_backbuffer.height;
+                offscreen_buffer.pitch = global_backbuffer.pitch;
+                GameUpdateAndRender(&offscreen_buffer, x_offset, y_offset);
 
                 // NOTE(mara): DirectSound output test
                 DWORD play_cursor;
@@ -649,7 +649,7 @@ int CALLBACK WinMain(HINSTANCE Instance,
                 real64 fps = (real64)perf_count_frequency / (real64)counter_elapsed;
                 real64 mcpf = ((real64)cycles_elapsed / (1000.0 * 1000.0));
 
-#if 0
+if 0
                 char buffer[256];
                 sprintf(buffer, "| %.02fms/f | %.02ff/s | %.02fmc/f |\n", ms_per_frame, fps, mcpf);
                 OutputDebugStringA(buffer);
