@@ -35,7 +35,7 @@ internal void RenderWeirdGradient(GameOffscreenBuffer *buffer, int blue_offset, 
               Windows programmers wanted it to look right in the hex values, so it looks like this:
 
               0x xxRRGGBB
-             */
+            */
             uint8 blue = (x + blue_offset);
             uint8 green = (y + green_offset);
             *pixel++ = ((green << 8) | blue);
@@ -45,12 +45,41 @@ internal void RenderWeirdGradient(GameOffscreenBuffer *buffer, int blue_offset, 
     }
 }
 
-
-internal void GameUpdateAndRender(GameOffscreenBuffer *offscreen_buffer,
-                                  int blue_offset, int green_offset,
-                                  GameSoundOutputBuffer *sound_buffer,
-                                  int tone_hz)
+/*
+void Win32ChangeSoundTone(Win32SoundOutput *sound_output, int new_hz)
 {
+    sound_output->tone_hz = new_hz;
+    sound_output->wave_period = sound_output->samples_per_second / sound_output->tone_hz;
+}
+*/
+
+internal void GameUpdateAndRender(GameInput *input,
+                                  GameOffscreenBuffer *offscreen_buffer,
+                                  GameSoundOutputBuffer *sound_buffer)
+{
+    local_persist int blue_offset = 0;
+    local_persist int green_offset = 0;
+    local_persist int tone_hz = 256;
+
+    GameControllerInput *input_0 = &input->controllers[0];
+    if (input_0->is_analog)
+    {
+        // NOTE(mara): Use analog movement tuning.
+        blue_offset += (int)4.0f * (input_0->end_x);
+        tone_hz = 256 + (int)(120.0f * (input_0->end_y));
+    }
+    else
+    {
+        // NOTE(mara): Use digital movement tuning.
+    }
+
+    // Input.a_button_ended_down;
+    // Input.a_button_half_transition_count;
+    if (input_0->down.ended_down)
+    {
+        green_offset += 1;
+    }
+
     // TODO(mara): Allow sample offsets here for more robust platform options.
     GameOutputSound(sound_buffer, tone_hz);
     RenderWeirdGradient(offscreen_buffer, blue_offset, green_offset);

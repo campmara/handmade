@@ -48,6 +48,7 @@ typedef double real64;
 // Booleans
 typedef int32 bool32;
 
+#include "handmade.h"
 #include "handmade.cpp"
 
 #include <Windows.h>
@@ -56,23 +57,7 @@ typedef int32 bool32;
 #include <xinput.h>
 #include <dsound.h>
 
-struct Win32OffscreenBuffer
-{
-    BITMAPINFO  info;
-    void       *memory;
-    HBITMAP     handle;
-    HDC         device_context;
-    int         width;
-    int         height;
-    int         pitch;
-    int         bytes_per_pixel;
-};
-
-struct Win32WindowDimensions
-{
-    int width;
-    int height;
-};
+#include "win32_handmade.h"
 
 // TODO(mara): These are globals for now
 global bool                 global_is_running;
@@ -407,19 +392,6 @@ LRESULT CALLBACK Win32MainWindowCallback(HWND window,
     return result;
 }
 
-struct Win32SoundOutput
-{
-    int    samples_per_second;
-    int    tone_hz;
-    int16  tone_volume;
-    uint32 running_sample_index;
-    int    wave_period;
-    int    bytes_per_sample;
-    int    secondary_buffer_size;
-    real32 t_sine;
-    int    latency_sample_count; // how many samples away from the cursor we'd like to be in general
-};
-
 void Win32ClearSoundBuffer(Win32SoundOutput *sound_output)
 {
     void *region1;
@@ -485,10 +457,12 @@ void Win32FillSoundBuffer(Win32SoundOutput *sound_output,
     }
 }
 
-void Win32ChangeSoundTone(Win32SoundOutput *sound_output, int new_hz)
+internal void ProcessXInputDigitalButton(DWORD xinput_button_state, DWORD button_bit,
+                                         GameButtonState *prev_state,
+                                         GameButtonState *new_state)
 {
-    sound_output->tone_hz = new_hz;
-    sound_output->wave_period = sound_output->samples_per_second / sound_output->tone_hz;
+    new_state->ended_down = ((xinput_button_state & button_bit) == button_bit);
+    new_state->half_transition_count = (prev_state->ended_down != new_state->ended_down) ? 1 : 0;
 }
 
 int CALLBACK WinMain(HINSTANCE Instance,
@@ -532,17 +506,10 @@ int CALLBACK WinMain(HINSTANCE Instance,
             // it forever because we are not sharing it with anyone
             HDC device_context = GetDC(window);
 
-            // NOTE(mara): graphics test
-            int x_offset = 0;
-            int y_offset = 0;
-
             // TODO(mara): make this 60 seconds?
             Win32SoundOutput sound_output = {};
             sound_output.samples_per_second = 48000;
-            sound_output.tone_hz = 256;
-            sound_output.tone_volume = 1000;
             sound_output.running_sample_index = 0;
-            sound_output.wave_period = sound_output.samples_per_second / sound_output.tone_hz;
             sound_output.bytes_per_sample = sizeof(int16) * 2;
             sound_output.secondary_buffer_size = sound_output.samples_per_second * sound_output.bytes_per_sample;
             sound_output.latency_sample_count = sound_output.samples_per_second / 15;
@@ -554,7 +521,12 @@ int CALLBACK WinMain(HINSTANCE Instance,
 
             global_is_running = true;
 
-            int16 *samples = (int16 *)VirtualAlloc(0, 48000 * 2 * sizeof(int16), MEM_COMMIT, PAGE_READWRITE);
+            int16 *samples = (int16 *)VirtualAlloc(0, sound_output.secondary_buffer_size,
+                                                   MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+
+            GameInput input[2] = {};
+            GameInput *new_input = &input[0];
+            GameInput *prev_input = &input[1];
 
             // Most recent frame clock time
             uint64 last_cycle_count = __rdtsc();
@@ -563,6 +535,7 @@ int CALLBACK WinMain(HINSTANCE Instance,
             while (global_is_running)
             {
                 MSG message;
+
                 while (PeekMessageA(&message, 0, 0, 0, PM_REMOVE))
                 {
                     if (message.message == WM_QUIT)
@@ -574,40 +547,80 @@ int CALLBACK WinMain(HINSTANCE Instance,
                 }
 
                 // TODO(mara): Should we poll this more frequently?
-                for (DWORD controller_idx = 0; controller_idx < XUSER_MAX_COUNT; ++controller_idx)
+                int max_controller_count = XUSER_MAX_COUNT;
+                if (max_controller_count > ArrayCount(new_input->controllers))
                 {
-                    XINPUT_STATE controller_state;
-                    if (XInputGetState(controller_idx, &controller_state) == ERROR_SUCCESS)
-                    {
-                        // NOTE(mara): This controller is plugged in
-                        // TODO(mara): See if controller_state.dwPacketNumber increments
-                        XINPUT_GAMEPAD *pad = &controller_state.Gamepad;
-                        bool32 dpad_up = (pad->wButtons & XINPUT_GAMEPAD_DPAD_UP);
-                        bool32 dpad_down = (pad->wButtons & XINPUT_GAMEPAD_DPAD_DOWN);
-                        bool32 dpad_left = (pad->wButtons & XINPUT_GAMEPAD_DPAD_LEFT);
-                        bool32 dpad_right = (pad->wButtons & XINPUT_GAMEPAD_DPAD_RIGHT);
-                        bool32 start = (pad->wButtons & XINPUT_GAMEPAD_START);
-                        bool32 back = (pad->wButtons & XINPUT_GAMEPAD_BACK);
-                        bool32 left_shoulder = (pad->wButtons & XINPUT_GAMEPAD_LEFT_SHOULDER);
-                        bool32 right_shoulder = (pad->wButtons & XINPUT_GAMEPAD_RIGHT_SHOULDER);
-                        bool32 a_button = (pad->wButtons & XINPUT_GAMEPAD_A);
-                        bool32 b_button = (pad->wButtons & XINPUT_GAMEPAD_B);
-                        bool32 x_button = (pad->wButtons & XINPUT_GAMEPAD_X);
-                        bool32 y_button = (pad->wButtons & XINPUT_GAMEPAD_Y);
+                    max_controller_count = ArrayCount(new_input->controllers);
+                }
 
-                        int16 stick_x = pad->sThumbLX;
-                        int16 stick_y = pad->sThumbLY;
+                for (DWORD controller_index = 0; controller_index < max_controller_count; ++controller_index)
+                {
+                    GameControllerInput *prev_controller = &prev_input->controllers[controller_index];
+                    GameControllerInput *new_controller = &new_input->controllers[controller_index];
+
+                    XINPUT_STATE controller_state;
+                    if (XInputGetState(controller_index, &controller_state) == ERROR_SUCCESS)
+                    {
+                        // NOTE(mara): This controller is plugged in.
+                        // TODO(mara): See if controller_state.dwPacketNumber increments too rapidly.
+                        XINPUT_GAMEPAD *pad = &controller_state.Gamepad;
+
+                        new_controller->is_analog = true;
+                        new_controller->start_x = prev_controller->end_x;
+                        new_controller->start_y = prev_controller->end_y;
 
                         // TODO(mara): we will do deadzone handling later properly using
                         // XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE and
-                        // XINPUT_GAMEPAD_RIGHT_THUMB_DEADZONE
+                        // XINPUT_GAMEPAD_RIGHT_THUMB_DEADZONE.
 
-                        // Kill the controller noise at deadzones
-                        x_offset += stick_x / 4096;
-                        y_offset -= stick_y / 4096;
+                        // TODO(mara): min/max macros!!!
+                        // TODO(mara): collapse to single function.
+                        // Create normalized (-1 to 1) thumbstick axis values.
+                        real32 x = (real32)pad->sThumbLX / 32768.0f;
+                        new_controller->min_x = new_controller->max_x = new_controller->end_x = x;
 
-                        sound_output.tone_hz = 512 + (int)(256.0f * ((real32)stick_y / 30000.0f));
-                        sound_output.wave_period = sound_output.samples_per_second / sound_output.tone_hz;
+                        real32 y = (real32)pad->sThumbLY / 32768.0f;
+                        new_controller->min_y = new_controller->max_y = new_controller->end_y = y;
+
+                        ProcessXInputDigitalButton(pad->wButtons, XINPUT_GAMEPAD_A,
+                                                   &prev_controller->down,
+                                                   &new_controller->down);
+                        ProcessXInputDigitalButton(pad->wButtons, XINPUT_GAMEPAD_B,
+                                                   &prev_controller->right,
+                                                   &new_controller->right);
+                        ProcessXInputDigitalButton(pad->wButtons, XINPUT_GAMEPAD_X,
+                                                   &prev_controller->left,
+                                                   &new_controller->left);
+                        ProcessXInputDigitalButton(pad->wButtons, XINPUT_GAMEPAD_Y,
+                                                   &prev_controller->up,
+                                                   &new_controller->up);
+
+                        ProcessXInputDigitalButton(pad->wButtons, XINPUT_GAMEPAD_DPAD_UP,
+                                                   &prev_controller->dpad_up,
+                                                   &new_controller->dpad_up);
+                        ProcessXInputDigitalButton(pad->wButtons, XINPUT_GAMEPAD_DPAD_DOWN,
+                                                   &prev_controller->dpad_down,
+                                                   &new_controller->dpad_down);
+                        ProcessXInputDigitalButton(pad->wButtons, XINPUT_GAMEPAD_DPAD_LEFT,
+                                                   &prev_controller->dpad_left,
+                                                   &new_controller->dpad_left);
+                        ProcessXInputDigitalButton(pad->wButtons, XINPUT_GAMEPAD_DPAD_RIGHT,
+                                                   &prev_controller->dpad_right,
+                                                   &new_controller->dpad_right);
+
+                        ProcessXInputDigitalButton(pad->wButtons, XINPUT_GAMEPAD_LEFT_SHOULDER,
+                                                   &prev_controller->left_shoulder,
+                                                   &new_controller->left_shoulder);
+                        ProcessXInputDigitalButton(pad->wButtons, XINPUT_GAMEPAD_RIGHT_SHOULDER,
+                                                   &prev_controller->right_shoulder,
+                                                   &new_controller->right_shoulder);
+
+                        ProcessXInputDigitalButton(pad->wButtons, XINPUT_GAMEPAD_START,
+                                                   &prev_controller->start,
+                                                   &new_controller->start);
+                        ProcessXInputDigitalButton(pad->wButtons, XINPUT_GAMEPAD_BACK,
+                                                   &prev_controller->back,
+                                                   &new_controller->back);
                     }
                     else
                     {
@@ -657,11 +670,8 @@ int CALLBACK WinMain(HINSTANCE Instance,
                 offscreen_buffer.width = global_backbuffer.width;
                 offscreen_buffer.height = global_backbuffer.height;
                 offscreen_buffer.pitch = global_backbuffer.pitch;
-                GameUpdateAndRender(&offscreen_buffer,
-                                    x_offset,
-                                    y_offset,
-                                    &sound_buffer,
-                                    sound_output.tone_hz);
+
+                GameUpdateAndRender(new_input, &offscreen_buffer, &sound_buffer);
 
                 // NOTE(mara): DirectSound output test
                 if (sound_is_valid)
@@ -694,16 +704,21 @@ int CALLBACK WinMain(HINSTANCE Instance,
 
                 last_counter = end_counter;
                 last_cycle_count = end_cycle_count;
+
+                GameInput *temp = new_input;
+                new_input = prev_input;
+                prev_input = temp;
+                // TODO(mara): Should i clear these here?
             }
         }
         else
         {
-            // TODO(mara): Logging here
+            // TODO(mara): Logging here.
         }
     }
     else
     {
-        // TODO(mara): Logging here
+        // TODO(mara): Logging here.
     }
 
     return(0);

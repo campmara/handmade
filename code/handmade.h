@@ -1,6 +1,10 @@
 #ifndef HANDMADE_H
 #define HANDMADE_H
 
+#define ArrayCount(array) (sizeof(array) / sizeof((array)[0]))
+// TODO(mara): swap, min, max ... macros???
+
+
 /*
  TODO(mara): Services that the platform layer provides to the game.
  */
@@ -26,10 +30,56 @@ struct GameSoundOutputBuffer
     int16 *samples;
 };
 
-// FOUR THINGS - timing, controller / keyboard input, bitmap buffer to use, sound buffer to use
-internal void GameUpdateAndRender(GameOffscreenBuffer *offscreen_buffer,
-                                  int blue_offset, int green_offset,
-                                  GameSoundOutputBuffer *sound_buffer,
-                                  int tone_hz);
+struct GameButtonState
+{
+    bool32 ended_down;
+    int half_transition_count;
+};
+
+struct GameControllerInput
+{
+    bool32 is_analog;
+    
+    real32 start_x;
+    real32 start_y;
+
+    real32 min_x;
+    real32 min_y;
+
+    real32 max_x;
+    real32 max_y;
+
+    real32 end_x;
+    real32 end_y;
+
+    union
+    {
+        GameButtonState buttons[12];
+        struct
+        {
+            GameButtonState up;
+            GameButtonState down;
+            GameButtonState left;
+            GameButtonState right;
+            GameButtonState dpad_up;
+            GameButtonState dpad_down;
+            GameButtonState dpad_left;
+            GameButtonState dpad_right;
+            GameButtonState left_shoulder;
+            GameButtonState right_shoulder;
+            GameButtonState start;
+            GameButtonState back;
+        };
+    };
+};
+
+struct GameInput
+{
+    GameControllerInput controllers[4];
+};
+
+internal void GameUpdateAndRender(GameInput *input,
+                                  GameOffscreenBuffer *offscreen_buffer,
+                                  GameSoundOutputBuffer *sound_buffer);
 
 #endif
