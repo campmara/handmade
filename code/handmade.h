@@ -29,6 +29,7 @@ struct GameSoundOutputBuffer
 // FOUR THINGS - timing, controller / keyboard input, bitmap buffer to use, sound buffer to use
 internal void GameUpdateAndRender(GameOffscreenBuffer *offscreen_buffer,
                                   int blue_offset, int green_offset,
-                                  GameSoundOutputBuffer *sound_buffer);
+                                  GameSoundOutputBuffer *sound_buffer,
+                                  int tone_hz);
 
 #endif
