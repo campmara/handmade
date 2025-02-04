@@ -53,13 +53,12 @@ void Win32ChangeSoundTone(Win32SoundOutput *sound_output, int new_hz)
 }
 */
 
-internal void GameUpdateAndRender(GameInput *input,
+internal void GameUpdateAndRender(GameMemory *memory,
+                                  GameInput *input,
                                   GameOffscreenBuffer *offscreen_buffer,
                                   GameSoundOutputBuffer *sound_buffer)
 {
-    local_persist int blue_offset = 0;
-    local_persist int green_offset = 0;
-    local_persist int tone_hz = 256;
+    GameState *game_state = (GameState *)memory->permanent_storage;
 
     GameControllerInput *input_0 = &input->controllers[0];
     if (input_0->is_analog)
