@@ -27,14 +27,45 @@
 #define ArrayCount(array) (sizeof(array) / sizeof((array)[0]))
 // TODO(mara): swap, min, max ... macros???
 
+inline uint32 SafeTruncateUInt64(uint64 value)
+{
+    // TODO(mara): Defines for maximum values (uint32 max)
+    Assert(value <= 0xFFFFFFFF);
+    uint32 result = (uint32)value;
+    return result;
+}
 
 /*
- TODO(mara): Services that the platform layer provides to the game.
+  ==================================================================================================
+  NOTE(mara): Services that the platform layer provides to the game.
+  ==================================================================================================
  */
 
+#if HANDMADE_INTERNAL
 /*
+  IMPORTANT(mara):
+
+  These are NOT for doing anything in the shipping game - they are blocking and the write doesn't
+  protect against lost data!
+ */
+
+struct DEBUGReadFileResult
+{
+    uint32 content_size;
+    void *content;
+};
+
+internal DEBUGReadFileResult DEBUGPlatformReadEntireFile(char *filename);
+internal void DEBUGPlatformFreeFileMemory(void *memory);
+
+internal bool32 DEBUGPlatformWriteEntireFile(char *filename, uint32 memory_size, void *memory);
+#endif
+
+/*
+  ==================================================================================================
   NOTE(mara): services that the game provides to the platform layer.
   This may expand in the future - sound on separate thread, etc.
+  ==================================================================================================
  */
 
 // TODO(mara): In the future, rendering _specifically_ will become a three-tiered abstraction!!!
@@ -92,7 +123,7 @@ struct GameControllerInput
             GameButtonState right_shoulder;
             GameButtonState start;
             GameButtonState back;
-        };
+         };
     };
 };
 

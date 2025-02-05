@@ -36,8 +36,8 @@ internal void RenderWeirdGradient(GameOffscreenBuffer *buffer, int blue_offset, 
 
               0x xxRRGGBB
             */
-            uint8 blue = (x + blue_offset);
-            uint8 green = (y + green_offset);
+            uint8 blue = (uint8)(x + blue_offset);
+            uint8 green = (uint8)(y + green_offset);
             *pixel++ = ((green << 8) | blue);
         }
 
@@ -63,6 +63,16 @@ internal void GameUpdateAndRender(GameMemory *memory,
     GameState *game_state = (GameState *)memory->permanent_storage;
     if (!memory->is_initialized)
     {
+        char *filename = __FILE__;
+
+        DEBUGReadFileResult file = DEBUGPlatformReadEntireFile(filename);
+        if (file.content)
+        {
+            DEBUGPlatformWriteEntireFile("handmade_test.out",
+                                         file.content_size, file.content);
+            DEBUGPlatformFreeFileMemory(file.content);
+        }
+
         // VirtualAlloc will clear game state to zero, so we only need to set the nonzero values
         // on initialization.
         game_state->tone_hz = 256;
@@ -75,8 +85,8 @@ internal void GameUpdateAndRender(GameMemory *memory,
     if (input_0->is_analog)
     {
         // NOTE(mara): Use analog movement tuning.
-        game_state->blue_offset += (int)4.0f * (input_0->end_x);
-        game_state->tone_hz = 256 + (int)(120.0f * (input_0->end_y));
+        game_state->blue_offset += (int)(4.0f * input_0->end_x);
+        game_state->tone_hz = 256 + (int)(120.0f * input_0->end_y);
     }
     else
     {
