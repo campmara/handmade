@@ -1,6 +1,29 @@
 #ifndef HANDMADE_H
 #define HANDMADE_H
 
+/*
+  NOTE(mara): Compile-time Defines:
+
+  HANDMADE_INTERNAL:
+      0 - Build for public release.
+      1 - Build for developer only.
+  HANDMADE_SLOW:
+      0 - Slow code NOT allowed!
+      1 - Slow code welcome. (Asserts)
+ */
+
+#if HANDMADE_SLOW
+#define Assert(expression) if (!(expression)) { *(int *)0 = 0; }
+#else
+#define Assert(expression)
+#endif
+
+// TODO(mara): Should these always use 64-bit?
+#define Kilobytes(value) ((value) * 1024)
+#define Megabytes(value) (Kilobytes(value) * 1024)
+#define Gigabytes(value) (Megabytes(value) * 1024)
+#define Terabytes(value) (Gigabytes(value) * 1024)
+
 #define ArrayCount(array) (sizeof(array) / sizeof((array)[0]))
 // TODO(mara): swap, min, max ... macros???
 
@@ -39,7 +62,7 @@ struct GameButtonState
 struct GameControllerInput
 {
     bool32 is_analog;
-    
+
     real32 start_x;
     real32 start_y;
 
@@ -75,13 +98,20 @@ struct GameControllerInput
 
 struct GameInput
 {
+    // TODO(mara): Insert clock values here.
+
     GameControllerInput controllers[4];
 };
 
 struct GameMemory
 {
-    uint64 permanent_storage_space;
-    void *permanent_storage;
+    bool32 is_initialized;
+
+    uint64 permanent_storage_size;
+    void *permanent_storage; // NOTE(mara): REQUIRED to be cleared to zero at startup!
+
+    uint64 transient_storage_size;
+    void *transient_storage; // NOTE(mara): REQUIRED to be cleared to zero at startup!
 };
 
 internal void GameUpdateAndRender(GameMemory *memory,

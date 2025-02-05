@@ -58,14 +58,25 @@ internal void GameUpdateAndRender(GameMemory *memory,
                                   GameOffscreenBuffer *offscreen_buffer,
                                   GameSoundOutputBuffer *sound_buffer)
 {
+    Assert(sizeof(GameState) <= memory->permanent_storage_size);
+
     GameState *game_state = (GameState *)memory->permanent_storage;
+    if (!memory->is_initialized)
+    {
+        // VirtualAlloc will clear game state to zero, so we only need to set the nonzero values
+        // on initialization.
+        game_state->tone_hz = 256;
+
+        // TODO(mara): This may be more appropriate to do in the platform layer.
+        memory->is_initialized = true;
+    }
 
     GameControllerInput *input_0 = &input->controllers[0];
     if (input_0->is_analog)
     {
         // NOTE(mara): Use analog movement tuning.
-        blue_offset += (int)4.0f * (input_0->end_x);
-        tone_hz = 256 + (int)(120.0f * (input_0->end_y));
+        game_state->blue_offset += (int)4.0f * (input_0->end_x);
+        game_state->tone_hz = 256 + (int)(120.0f * (input_0->end_y));
     }
     else
     {
@@ -76,10 +87,10 @@ internal void GameUpdateAndRender(GameMemory *memory,
     // Input.a_button_half_transition_count;
     if (input_0->down.ended_down)
     {
-        green_offset += 1;
+        game_state->green_offset += 1;
     }
 
     // TODO(mara): Allow sample offsets here for more robust platform options.
-    GameOutputSound(sound_buffer, tone_hz);
-    RenderWeirdGradient(offscreen_buffer, blue_offset, green_offset);
+    GameOutputSound(sound_buffer, game_state->tone_hz);
+    RenderWeirdGradient(offscreen_buffer, game_state->blue_offset, game_state->green_offset);
 }
