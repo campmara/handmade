@@ -92,37 +92,35 @@ struct GameButtonState
 
 struct GameControllerInput
 {
+    bool32 is_connected;
     bool32 is_analog;
-
-    real32 start_x;
-    real32 start_y;
-
-    real32 min_x;
-    real32 min_y;
-
-    real32 max_x;
-    real32 max_y;
-
-    real32 end_x;
-    real32 end_y;
+    real32 stick_average_x;
+    real32 stick_average_y;
 
     union
     {
-        GameButtonState buttons[12];
+        GameButtonState buttons[13];
         struct
         {
-            GameButtonState up;
-            GameButtonState down;
-            GameButtonState left;
-            GameButtonState right;
-            GameButtonState dpad_up;
-            GameButtonState dpad_down;
-            GameButtonState dpad_left;
-            GameButtonState dpad_right;
+            GameButtonState move_up;
+            GameButtonState move_down;
+            GameButtonState move_left;
+            GameButtonState move_right;
+
+            GameButtonState action_up;
+            GameButtonState action_down;
+            GameButtonState action_left;
+            GameButtonState action_right;
+
             GameButtonState left_shoulder;
             GameButtonState right_shoulder;
-            GameButtonState start;
+
             GameButtonState back;
+            GameButtonState start;
+
+            // NOTE(mara): All buttons must be added above this line.
+
+            GameButtonState terminator;
          };
     };
 };
@@ -131,8 +129,15 @@ struct GameInput
 {
     // TODO(mara): Insert clock values here.
 
-    GameControllerInput controllers[4];
+    // 1 Keyboard, 4 Gamepads.
+    GameControllerInput controllers[5];
 };
+inline GameControllerInput *GetController(GameInput *input, unsigned int controller_index)
+{
+    Assert(controller_index < ArrayCount(input->controllers));
+    GameControllerInput *result = &input->controllers[controller_index];
+    return result;
+}
 
 struct GameMemory
 {

@@ -58,6 +58,8 @@ internal void GameUpdateAndRender(GameMemory *memory,
                                   GameOffscreenBuffer *offscreen_buffer,
                                   GameSoundOutputBuffer *sound_buffer)
 {
+    Assert((&input->controllers[0].terminator - &input->controllers[0].buttons[0]) ==
+           (ArrayCount(input->controllers[0].buttons) - 1));
     Assert(sizeof(GameState) <= memory->permanent_storage_size);
 
     GameState *game_state = (GameState *)memory->permanent_storage;
@@ -81,23 +83,35 @@ internal void GameUpdateAndRender(GameMemory *memory,
         memory->is_initialized = true;
     }
 
-    GameControllerInput *input_0 = &input->controllers[0];
-    if (input_0->is_analog)
+    for (int controller_index = 0; controller_index < ArrayCount(input->controllers); ++controller_index)
     {
-        // NOTE(mara): Use analog movement tuning.
-        game_state->blue_offset += (int)(4.0f * input_0->end_x);
-        game_state->tone_hz = 256 + (int)(120.0f * input_0->end_y);
-    }
-    else
-    {
-        // NOTE(mara): Use digital movement tuning.
-    }
+        GameControllerInput *controller = GetController(input, controller_index);
+        if (controller->is_analog)
+        {
+            // NOTE(mara): Use analog movement tuning.
+            game_state->blue_offset += (int)(4.0f * controller->stick_average_x);
+            game_state->tone_hz = 256 + (int)(120.0f * controller->stick_average_y);
+        }
+        else
+        {
+            // NOTE(mara): Use digital movement tuning.
+            if (controller->move_left.ended_down)
+            {
+                game_state->blue_offset -= 1;
+            }
 
-    // Input.a_button_ended_down;
-    // Input.a_button_half_transition_count;
-    if (input_0->down.ended_down)
-    {
-        game_state->green_offset += 1;
+            if (controller->move_right.ended_down)
+            {
+                game_state->blue_offset += 1;
+            }
+        }
+
+        // Input.a_button_ended_down;
+        // Input.a_button_half_transition_count;
+        if (controller->action_down.ended_down)
+        {
+            game_state->green_offset += 1;
+        }
     }
 
     // TODO(mara): Allow sample offsets here for more robust platform options.
