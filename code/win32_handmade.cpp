@@ -63,6 +63,7 @@ typedef int32 bool32;
 global bool                 global_is_running;
 global Win32OffscreenBuffer global_backbuffer;
 global LPDIRECTSOUNDBUFFER  global_secondary_buffer;
+global int64 global_perf_count_frequency;
 
 // NOTE(mara): XInputGetState
 #define XINPUT_GET_STATE(name) DWORD WINAPI name(DWORD dwUserIndex, XINPUT_STATE *pState)
@@ -604,6 +605,20 @@ internal void Win32ProcessPendingMessages(GameControllerInput *keyboard_controll
     }
 }
 
+inline LARGE_INTEGER Win32GetWallClock()
+{
+    LARGE_INTEGER result;
+    QueryPerformanceCounter(&result);
+    return result;
+}
+
+inline real32 Win32GetSecondsElapsed(LARGE_INTEGER start, LARGE_INTEGER end)
+{
+    real32 result = ((real32)(end.QuadPart - start.QuadPart) /
+                     (real32)global_perf_count_frequency);
+    return result;
+}
+
 int CALLBACK WinMain(HINSTANCE Instance,
                      HINSTANCE PrevInstance,
                      LPSTR CommandLine,
@@ -611,7 +626,12 @@ int CALLBACK WinMain(HINSTANCE Instance,
 {
     LARGE_INTEGER perf_count_frequency_result;
     QueryPerformanceFrequency(&perf_count_frequency_result);
-    int64 perf_count_frequency = perf_count_frequency_result.QuadPart;
+    global_perf_count_frequency = perf_count_frequency_result.QuadPart;
+
+    // NOTE(mara): Set the windows scheduler granularity to 1 ms so that our sleep can be more
+    // granular.
+    UINT desired_scheduler_ms = 1;
+    bool32 sleep_is_granular = (timeBeginPeriod(desired_scheduler_ms) == TIMERR_NOERROR);
 
     Win32LoadXInput();
 
@@ -623,6 +643,11 @@ int CALLBACK WinMain(HINSTANCE Instance,
     window_class.lpfnWndProc = Win32MainWindowCallback;
     window_class.hInstance = Instance;
     window_class.lpszClassName = "HandmadeHeroWindowClass";
+
+    // TODO(mara): How do we reliably query this on windows??
+    int monitor_refresh_hz = 60;
+    int game_update_hz = monitor_refresh_hz / 2;
+    real32 target_seconds_per_frame = 1.0f / (real32)game_update_hz;
 
     if (RegisterClassA(&window_class))
     {
@@ -688,9 +713,9 @@ int CALLBACK WinMain(HINSTANCE Instance,
                 GameInput *prev_input = &input[1];
 
                 // Most recent frame clock time
+                LARGE_INTEGER last_counter = Win32GetWallClock();
                 uint64 last_cycle_count = __rdtsc();
-                LARGE_INTEGER last_counter;
-                QueryPerformanceCounter(&last_counter);
+
                 while (global_is_running)
                 {
                     // TODO(mara): Zeroing macro.
@@ -862,6 +887,8 @@ int CALLBACK WinMain(HINSTANCE Instance,
                         sound_is_valid = true;
                     }
 
+                    // TODO(mara): Sound is wrong now because we haven't updated it to go with the
+                    // new frame loop.
                     // Interleaved sound sample buffer.
                     GameSoundOutputBuffer sound_buffer = {};
                     sound_buffer.samples_per_second = sound_output.samples_per_second;
@@ -876,10 +903,40 @@ int CALLBACK WinMain(HINSTANCE Instance,
 
                     GameUpdateAndRender(&game_memory, new_input, &offscreen_buffer, &sound_buffer);
 
-                    // NOTE(mara): DirectSound output test
                     if (sound_is_valid)
                     {
                         Win32FillSoundBuffer(&sound_output, byte_to_lock, bytes_to_write, &sound_buffer);
+                    }
+
+                    LARGE_INTEGER work_counter = Win32GetWallClock();
+                    real32 work_seconds_elapsed = Win32GetSecondsElapsed(last_counter, work_counter);
+
+                    // TODO(mara): NOT TESTED YET! PROBABLY BUGGY!!!!!!!!
+                    real32 seconds_elapsed_for_frame = work_seconds_elapsed;
+                    if (seconds_elapsed_for_frame < target_seconds_per_frame)
+                    {
+                        if (sleep_is_granular)
+                        {
+                            DWORD sleep_ms = (DWORD)(1000.0f * (target_seconds_per_frame -
+                                                                seconds_elapsed_for_frame));
+                            if(sleep_ms > 0)
+                            {
+                                Sleep(sleep_ms);
+                            }
+                        }
+
+                        real32 test_seconds_elapsed_for_frame = Win32GetSecondsElapsed(last_counter, Win32GetWallClock());
+                        //Assert(test_seconds_elapsed_for_frame < target_seconds_per_frame);
+
+                        while (seconds_elapsed_for_frame < target_seconds_per_frame)
+                        {
+                            seconds_elapsed_for_frame = Win32GetSecondsElapsed(last_counter, Win32GetWallClock());
+                        }
+                    }
+                    else
+                    {
+                        // TODO(mara): MISSED FRAME RATE!!!
+                        // TODO(mara): Logging
                     }
 
                     Win32WindowDimensions dimensions = GetWindowDimensions(window);
@@ -888,30 +945,26 @@ int CALLBACK WinMain(HINSTANCE Instance,
                                                dimensions.width,
                                                dimensions.height);
 
-                    // Counter that tracks the end of every frame
-                    uint64 end_cycle_count = __rdtsc();
-                    LARGE_INTEGER end_counter;
-                    QueryPerformanceCounter(&end_counter);
-
-                    uint64 cycles_elapsed = end_cycle_count - last_cycle_count;
-                    int64 counter_elapsed = end_counter.QuadPart - last_counter.QuadPart;
-                    real64 ms_per_frame = ((1000.0 * (real64)counter_elapsed) / (real64)perf_count_frequency);
-                    real64 fps = (real64)perf_count_frequency / (real64)counter_elapsed;
-                    real64 mcpf = ((real64)cycles_elapsed / (1000.0 * 1000.0));
-
-#if 0
-                    char buffer[256];
-                    sprintf(buffer, "| %.02fms/f | %.02ff/s | %.02fmc/f |\n", ms_per_frame, fps, mcpf);
-                    OutputDebugStringA(buffer);
-#endif
-
-                    last_counter = end_counter;
-                    last_cycle_count = end_cycle_count;
-
                     GameInput *temp = new_input;
                     new_input = prev_input;
                     prev_input = temp;
                     // TODO(mara): Should i clear these here?
+
+                    LARGE_INTEGER end_counter = Win32GetWallClock();
+                    real32 ms_per_frame = 1000.0f * Win32GetSecondsElapsed(last_counter, end_counter);
+                    last_counter = end_counter;
+
+                    uint64 end_cycle_count = __rdtsc();
+                    uint64 cycles_elapsed = end_cycle_count - last_cycle_count;
+                    last_cycle_count = end_cycle_count;
+
+                    real64 fps = 0.0f;
+                    real64 mcpf = ((real64)cycles_elapsed / (1000.0 * 1000.0));
+
+                    char fps_buffer[256];
+                    _snprintf_s(fps_buffer, sizeof(fps_buffer),
+                                "| %.02fms/f | %.02ff/s | %.02fmc/f |\n", ms_per_frame, fps, mcpf);
+                    OutputDebugStringA(fps_buffer);
                 }
             }
             else
