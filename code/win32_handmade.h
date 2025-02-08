@@ -2,8 +2,6 @@ struct Win32OffscreenBuffer
 {
     BITMAPINFO  info;
     void       *memory;
-    HBITMAP     handle;
-    HDC         device_context;
     int         width;
     int         height;
     int         pitch;
@@ -21,7 +19,13 @@ struct Win32SoundOutput
     int    samples_per_second;
     uint32 running_sample_index;
     int    bytes_per_sample;
-    int    secondary_buffer_size;
+    DWORD    secondary_buffer_size;
     real32 t_sine;
     int    latency_sample_count; // how many samples away from the cursor we'd like to be in general
+};
+
+struct Win32DebugTimeMarker
+{
+    DWORD play_cursor;
+    DWORD write_cursor;
 };
