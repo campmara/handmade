@@ -15,6 +15,12 @@ internal void GameOutputSound(GameSoundOutputBuffer *buffer, int tone_hz)
         *sample_out++ = sample_value;
 
         t_sine += 2.0f * PI_32 * 1.0f / (real32)wave_period;
+#if 1
+        if (t_sine > 2.0f * PI_32)
+        {
+            t_sine -= 2.0f * PI_32;
+        }
+#endif
     }
 }
 
@@ -55,8 +61,7 @@ void Win32ChangeSoundTone(Win32SoundOutput *sound_output, int new_hz)
 
 internal void GameUpdateAndRender(GameMemory *memory,
                                   GameInput *input,
-                                  GameOffscreenBuffer *offscreen_buffer,
-                                  GameSoundOutputBuffer *sound_buffer)
+                                  GameOffscreenBuffer *offscreen_buffer)
 {
     Assert((&input->controllers[0].terminator - &input->controllers[0].buttons[0]) ==
            (ArrayCount(input->controllers[0].buttons) - 1));
@@ -77,7 +82,7 @@ internal void GameUpdateAndRender(GameMemory *memory,
 
         // VirtualAlloc will clear game state to zero, so we only need to set the nonzero values
         // on initialization.
-        game_state->tone_hz = 256;
+        game_state->tone_hz = 512;
 
         // TODO(mara): This may be more appropriate to do in the platform layer.
         memory->is_initialized = true;
@@ -90,7 +95,7 @@ internal void GameUpdateAndRender(GameMemory *memory,
         {
             // NOTE(mara): Use analog movement tuning.
             game_state->blue_offset += (int)(4.0f * controller->stick_average_x);
-            game_state->tone_hz = 256 + (int)(120.0f * controller->stick_average_y);
+            game_state->tone_hz = 512 + (int)(120.0f * controller->stick_average_y);
         }
         else
         {
@@ -114,7 +119,11 @@ internal void GameUpdateAndRender(GameMemory *memory,
         }
     }
 
-    // TODO(mara): Allow sample offsets here for more robust platform options.
-    GameOutputSound(sound_buffer, game_state->tone_hz);
     RenderWeirdGradient(offscreen_buffer, game_state->blue_offset, game_state->green_offset);
+}
+
+internal void GameGetSoundSamples(GameMemory *memory, GameSoundOutputBuffer *sound_buffer)
+{
+    GameState *game_state = (GameState *)memory->permanent_storage;
+    GameOutputSound(sound_buffer, game_state->tone_hz);
 }

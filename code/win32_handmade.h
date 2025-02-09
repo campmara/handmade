@@ -19,13 +19,22 @@ struct Win32SoundOutput
     int    samples_per_second;
     uint32 running_sample_index;
     int    bytes_per_sample;
-    DWORD    secondary_buffer_size;
+    DWORD  secondary_buffer_size;
+    DWORD  safety_bytes;
     real32 t_sine;
-    int    latency_sample_count; // how many samples away from the cursor we'd like to be in general
+    int    latency_sample_count; // How many samples away from the cursor we'd like to be in general.
+    // TODO(mara): Math gets simpler if we add a bytes_per_second field?
+    // TODO(mara): Should running sample index be in bytes as well?
 };
 
 struct Win32DebugTimeMarker
 {
-    DWORD play_cursor;
-    DWORD write_cursor;
+    DWORD output_play_cursor;
+    DWORD output_write_cursor;
+    DWORD output_location;
+    DWORD output_byte_count;
+    DWORD expected_flip_play_cursor;
+
+    DWORD flip_play_cursor;
+    DWORD flip_write_cursor;
 };
