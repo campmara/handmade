@@ -1,26 +1,23 @@
 #include "handmade.h"
 
-internal void GameOutputSound(GameSoundOutputBuffer *buffer, int tone_hz)
+internal void GameOutputSound(GameState *game_state, GameSoundOutputBuffer *buffer, int tone_hz)
 {
-    local_persist real32 t_sine;
     int16 tone_volume = 3000;
     int wave_period = buffer->samples_per_second / tone_hz;
 
     int16 *sample_out = buffer->samples;
     for (int sample_index = 0; sample_index < buffer->sample_count; ++sample_index)
     {
-        real32 sine_value = sinf(t_sine);
+        real32 sine_value = sinf(game_state->t_sine);
         int16 sample_value = (int16)(sine_value * tone_volume); // scale up to the volume hz
         *sample_out++ = sample_value;
         *sample_out++ = sample_value;
 
-        t_sine += 2.0f * PI_32 * 1.0f / (real32)wave_period;
-#if 1
-        if (t_sine > 2.0f * PI_32)
+        game_state->t_sine += 2.0f * PI_32 * 1.0f / (real32)wave_period;
+        if (game_state->t_sine > 2.0f * PI_32)
         {
-            t_sine -= 2.0f * PI_32;
+            game_state->t_sine -= 2.0f * PI_32;
         }
-#endif
     }
 }
 
@@ -59,9 +56,7 @@ void Win32ChangeSoundTone(Win32SoundOutput *sound_output, int new_hz)
 }
 */
 
-internal void GameUpdateAndRender(GameMemory *memory,
-                                  GameInput *input,
-                                  GameOffscreenBuffer *offscreen_buffer)
+extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 {
     Assert((&input->controllers[0].terminator - &input->controllers[0].buttons[0]) ==
            (ArrayCount(input->controllers[0].buttons) - 1));
@@ -72,17 +67,18 @@ internal void GameUpdateAndRender(GameMemory *memory,
     {
         char *filename = __FILE__;
 
-        DEBUGReadFileResult file = DEBUGPlatformReadEntireFile(filename);
+        DEBUGReadFileResult file = memory->DEBUGPlatformReadEntireFile(filename);
         if (file.content)
         {
-            DEBUGPlatformWriteEntireFile("handmade_test.out",
+            memory->DEBUGPlatformWriteEntireFile("handmade_test.out",
                                          file.content_size, file.content);
-            DEBUGPlatformFreeFileMemory(file.content);
+            memory->DEBUGPlatformFreeFileMemory(file.content);
         }
 
         // VirtualAlloc will clear game state to zero, so we only need to set the nonzero values
         // on initialization.
         game_state->tone_hz = 512;
+        game_state->t_sine = 0.0f;
 
         // TODO(mara): This may be more appropriate to do in the platform layer.
         memory->is_initialized = true;
@@ -122,8 +118,20 @@ internal void GameUpdateAndRender(GameMemory *memory,
     RenderWeirdGradient(offscreen_buffer, game_state->blue_offset, game_state->green_offset);
 }
 
-internal void GameGetSoundSamples(GameMemory *memory, GameSoundOutputBuffer *sound_buffer)
+extern "C" GAME_GET_SOUND_SAMPLES(GameGetSoundSamples)
 {
     GameState *game_state = (GameState *)memory->permanent_storage;
-    GameOutputSound(sound_buffer, game_state->tone_hz);
+    GameOutputSound(game_state, sound_buffer, game_state->tone_hz);
 }
+
+#if HANDMADE_WIN32
+
+#include <windows.h>
+BOOL WINAPI DllMain(HINSTANCE hinstDLL,  // handle to DLL module
+                    DWORD fdwReason,     // reason for calling function
+                    LPVOID lpvReserved )  // reserved
+{
+    return TRUE;
+}
+
+#endif

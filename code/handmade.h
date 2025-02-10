@@ -12,6 +12,37 @@
       1 - Slow code welcome. (Asserts)
  */
 
+// TODO(mara): implement sin ourselves!
+#include <math.h>
+#include <stdint.h>
+
+#define global        static // truly global
+#define internal      static // local to the file
+#define local_persist static // local to the scope
+
+#define PI_32 3.14159265359f
+
+// Unsigned integer types
+typedef uint8_t uint8;
+typedef uint16_t uint16;
+typedef uint32_t uint32;
+typedef uint64_t uint64;
+
+// Signed integer types
+typedef int8_t int8;
+typedef int16_t int16;
+typedef int32_t int32;
+typedef int64_t int64;
+
+// Real-number types
+typedef float real32;
+typedef double real64;
+
+// Booleans
+typedef int32 bool32;
+
+#include "handmade.h"
+
 #if HANDMADE_SLOW
 #define Assert(expression) if (!(expression)) { *(int *)0 = 0; }
 #else
@@ -55,10 +86,15 @@ struct DEBUGReadFileResult
     void *content;
 };
 
-internal DEBUGReadFileResult DEBUGPlatformReadEntireFile(char *filename);
-internal void DEBUGPlatformFreeFileMemory(void *memory);
+#define DEBUG_PLATFORM_FREE_FILE_MEMORY(name) void name(void *memory)
+typedef DEBUG_PLATFORM_FREE_FILE_MEMORY(debug_platform_free_file_memory);
 
-internal bool32 DEBUGPlatformWriteEntireFile(char *filename, uint32 memory_size, void *memory);
+#define DEBUG_PLATFORM_READ_ENTIRE_FILE(name) DEBUGReadFileResult name(char *filename)
+typedef DEBUG_PLATFORM_READ_ENTIRE_FILE(debug_platform_read_entire_file);
+
+#define DEBUG_PLATFORM_WRITE_ENTIRE_FILE(name) bool32 name(char *filename, uint32 memory_size, void *memory)
+typedef DEBUG_PLATFORM_WRITE_ENTIRE_FILE(debug_platform_write_entire_file);
+
 #endif
 
 /*
@@ -148,15 +184,25 @@ struct GameMemory
 
     uint64 transient_storage_size;
     void *transient_storage; // NOTE(mara): REQUIRED to be cleared to zero at startup!
+
+    debug_platform_free_file_memory *DEBUGPlatformFreeFileMemory;
+    debug_platform_read_entire_file *DEBUGPlatformReadEntireFile;
+    debug_platform_write_entire_file *DEBUGPlatformWriteEntireFile;
 };
 
-internal void GameUpdateAndRender(GameMemory *memory,
-                                  GameInput *input,
-                                  GameOffscreenBuffer *offscreen_buffer);
+#define GAME_UPDATE_AND_RENDER(name) void name(GameMemory *memory, GameInput *input, GameOffscreenBuffer *offscreen_buffer)
+typedef GAME_UPDATE_AND_RENDER(game_update_and_render);
+GAME_UPDATE_AND_RENDER(GameUpdateAndRenderStub)
+{
+}
 
 // NOTE(mara): At the moment, this has to be a very fast function. It can not be > 1ms or so!!!!!
 // TODO(mara): Reduce the pressure on this function's performance by measuring it / asking about it.
-internal void GameGetSoundSamples(GameMemory *memory, GameSoundOutputBuffer *sound_buffer);
+#define GAME_GET_SOUND_SAMPLES(name) void name(GameMemory *memory, GameSoundOutputBuffer *sound_buffer)
+typedef GAME_GET_SOUND_SAMPLES(game_get_sound_samples);
+GAME_GET_SOUND_SAMPLES(GameGetSoundSamplesStub)
+{
+}
 
 //
 //
@@ -167,6 +213,8 @@ struct GameState
     int blue_offset;
     int green_offset;
     int tone_hz;
+
+    real32 t_sine;
 };
 
 #endif
