@@ -111,6 +111,7 @@ struct GameOffscreenBuffer
     int         width;
     int         height;
     int         pitch;
+    int         bytes_per_pixel;
 };
 
 struct GameSoundOutputBuffer
@@ -215,6 +216,10 @@ struct GameState
     int tone_hz;
 
     real32 t_sine;
+
+    int player_x;
+    int player_y;
+    real32 t_jump;
 };
 
 #endif
