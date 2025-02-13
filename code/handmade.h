@@ -193,17 +193,11 @@ struct GameMemory
 
 #define GAME_UPDATE_AND_RENDER(name) void name(GameMemory *memory, GameInput *input, GameOffscreenBuffer *offscreen_buffer)
 typedef GAME_UPDATE_AND_RENDER(game_update_and_render);
-GAME_UPDATE_AND_RENDER(GameUpdateAndRenderStub)
-{
-}
 
 // NOTE(mara): At the moment, this has to be a very fast function. It can not be > 1ms or so!!!!!
 // TODO(mara): Reduce the pressure on this function's performance by measuring it / asking about it.
 #define GAME_GET_SOUND_SAMPLES(name) void name(GameMemory *memory, GameSoundOutputBuffer *sound_buffer)
 typedef GAME_GET_SOUND_SAMPLES(game_get_sound_samples);
-GAME_GET_SOUND_SAMPLES(GameGetSoundSamplesStub)
-{
-}
 
 //
 //

@@ -8,7 +8,7 @@ internal void GameOutputSound(GameState *game_state, GameSoundOutputBuffer *buff
     int16 *sample_out = buffer->samples;
     for (int sample_index = 0; sample_index < buffer->sample_count; ++sample_index)
     {
-#if 0
+#if 1
         real32 sine_value = sinf(game_state->t_sine);
         int16 sample_value = (int16)(sine_value * tone_volume); // scale up to the volume hz
 #else
@@ -45,7 +45,7 @@ internal void RenderWeirdGradient(GameOffscreenBuffer *buffer, int blue_offset, 
             */
             uint8 blue = (uint8)(x + blue_offset);
             uint8 green = (uint8)(y + green_offset);
-            *pixel++ = ((green << 8) | blue);
+            *pixel++ = ((green << 16) | blue);
         }
 
         row += buffer->pitch;

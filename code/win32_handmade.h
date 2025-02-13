@@ -45,12 +45,14 @@ struct Win32GameCode
     FILETIME dll_last_write_time;
 
     // Function Pointers
+    // IMPORTANT(mara): Either of the callbacks can be 0! You MUST check before calling them.
     game_update_and_render *UpdateAndRender;
     game_get_sound_samples *GetSoundSamples;
 
     bool32 is_valid;
 };
 
+#define WIN32_STATE_FILE_NAME_COUNT MAX_PATH
 struct Win32State
 {
     uint64 total_size;
@@ -61,4 +63,7 @@ struct Win32State
 
     HANDLE playback_handle;
     int input_playing_index;
+
+    char exe_filename[WIN32_STATE_FILE_NAME_COUNT];
+    char *one_past_last_exe_filename_slash;
 };
