@@ -552,6 +552,9 @@ internal real32 Win32ProcessXInputStickValue(SHORT value, SHORT deadzone_thresho
 internal void Win32BeginRecordingInput(Win32State *win32_state, int input_recording_index)
 {
     win32_state->input_recording_index = input_recording_index;
+    // TODO(mara): These files must go in a temporary/build directory!!
+    // TODO(mara): Lazily write the giant memory block and use a memory copy instead?
+
     char *filename = "foo.hmi";
     win32_state->recording_handle = CreateFileA(filename, GENERIC_WRITE, 0, 0, CREATE_ALWAYS, 0, 0);
 
@@ -602,6 +605,7 @@ internal void Win32PlaybackInput(Win32State *win32_state, GameInput *new_input)
             int playing_index = win32_state->input_playing_index;
             Win32EndInputPlayback(win32_state);
             Win32BeginInputPlayback(win32_state, playing_index);
+            ReadFile(win32_state->playback_handle, new_input, sizeof(*new_input), &bytes_read, 0);
         }
     }
 }
